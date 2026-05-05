@@ -7,9 +7,13 @@ namespace Circuit
     /// </summary>
     [Category("Generic")]
     [DisplayName("Ground")]
-    public class Ground : OneTerminal
+    public class Ground : NamedWire
     {
-        public Ground() { Name = "GND1"; }
+        public Ground()
+        {
+            Name = "GND1";
+            WireName = "GND";
+        }
 
         public static void Analyze(Analysis Mna, Node G)
         {
@@ -21,9 +25,9 @@ namespace Circuit
 
         public override void Analyze(Analysis Mna) { Analyze(Mna, Terminal); }
 
-        public override void LayoutSymbol(SymbolLayout Sym)
+        protected internal override void LayoutSymbol(SymbolLayout Sym)
         {
-            base.LayoutSymbol(Sym);
+            Sym.AddTerminal(Terminal, new Coord(0, 0));
 
             Sym.AddLoop(EdgeType.Black,
                 new Coord(-10, 0),

@@ -11,9 +11,17 @@ using Util;
 namespace Circuit
 {
     /// <summary>
+    /// Interface for components with grouping ability.
+    /// </summary>
+    public interface IGroupableComponent
+    {
+        string Group { get; }
+    }
+
+    /// <summary>
     /// Interface for components that expose a pot controlled value.
     /// </summary>
-    public interface IPotControl
+    public interface IPotControl: IGroupableComponent
     {
         /// <summary>
         /// The value of the pot.
@@ -24,11 +32,11 @@ namespace Circuit
     /// <summary>
     /// Interface for components that expose a button controlled value.
     /// </summary>
-    public interface IButtonControl
+    public interface IButtonControl: IGroupableComponent
     {
         void Click();
-
-        string Group { get; }
+        int Position { get; set; }
+        int NumPositions { get; }
     }
 
     /// <summary>
@@ -83,7 +91,7 @@ namespace Circuit
 
         private object tag = null;
         [Browsable(false)]
-        public object Tag { get { return tag; } set { tag = value; NotifyChanged(nameof(Tag)); } }
+        public virtual object Tag { get { return tag; } set { tag = value; NotifyChanged(nameof(Tag)); } }
 
         /// <summary>
         /// Access the terminals of this component.
@@ -102,7 +110,7 @@ namespace Circuit
         /// Define the schematic layout of this component.
         /// </summary>
         /// <param name="S"></param>
-        public abstract void LayoutSymbol(SymbolLayout Sym);
+        protected internal abstract void LayoutSymbol(SymbolLayout Sym);
 
         public SymbolLayout LayoutSymbol()
         {

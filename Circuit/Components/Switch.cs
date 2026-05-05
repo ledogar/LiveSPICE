@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using ComputerAlgebra;
 
 namespace Circuit
 {
@@ -12,6 +13,7 @@ namespace Circuit
         protected int position = 0;
         [Serialize, Description("Switch position.")]
         public int Position { get { return position; } set { position = value; NotifyChanged(nameof(Position)); } }
+        public int NumPositions { get; private set; }
 
         private string group = "";
         [Serialize, Description("Switch group this switch is a part of.")]
@@ -38,16 +40,41 @@ namespace Circuit
 
             common = new Terminal(this, "Common");
 
+            this.NumPositions = ThrowCount;
+
             Name = "S1";
         }
 
+        // This the value of resistors inserted into unconnected switches, which can be substituted to
+        // either be included or excluded in a circuit equation. We don't use a fake large resistance
+        // unconditionally because it could impact the performance of simulations, and it's not that
+        // easy to determine a reasonable fake resistance. We should probably use the max of all component
+        // resistances, capacitances, and inductances, multipled by 1000 or something like that. Just using
+        // an absurdly huge value like 1e100 will ruin the precision of the numerical solvers.
+        public static Expression OpenResistance = Variable.New("_OSR");
+        public static Arrow IncludeOpen = Arrow.New(OpenResistance, 1e12d);
+        public static Arrow ExcludeOpen = Arrow.New(OpenResistance, Real.Infinity);
+
         public override void Analyze(Analysis Mna)
         {
-            if (0 <= position && position < Throws.Length)
-                Conductor.Analyze(Mna, Name, Common, Throws[Position]);
+            for (int i = 0; i < Throws.Length; ++i)
+                Analyze(Mna, Name, Common, Throws[i], i == Position);
+        }
+        public static void Analyze(Analysis Mna, string Name, Terminal Anode, Terminal Cathode, bool Closed)
+        {
+            if (Closed)
+            {
+                Conductor.Analyze(Mna, Name, Anode, Cathode);
+            }
+            else
+            {
+                // A truly unconnected throw terminal makes solving for initial conditions very difficult.
+                // Rather than fully disconnect the terminal, insert a fake resistor.
+                Resistor.Analyze(Mna, Name, Anode, Cathode, OpenResistance);
+            }
         }
 
-        public override void LayoutSymbol(SymbolLayout Sym)
+        protected internal override void LayoutSymbol(SymbolLayout Sym)
         {
             Sym.AddTerminal(common, new Coord(0, -20), new Coord(0, -12));
             Sym.AddCircle(EdgeType.Black, new Coord(0, -12), 2);
@@ -80,6 +107,18 @@ namespace Circuit
     [Description("single pole triple-throw switch.")]
     public class SP3T : SinglePoleSwitch { public SP3T() : base(3) { } }
 
+    [Category("Generic")]
+    [DisplayName("SP4T")]
+    [DefaultProperty("Position")]
+    [Description("single pole quadruple-throw switch.")]
+    public class SP4T : SinglePoleSwitch { public SP4T() : base(4) { } }
+
+    [Category("Generic")]
+    [DisplayName("SP5T")]
+    [DefaultProperty("Position")]
+    [Description("single pole quintuple-throw switch.")]
+    public class SP5T : SinglePoleSwitch { public SP5T() : base(5) { } }
+
 
     /// <summary>
     /// Switch component that is open or closed. 
@@ -101,11 +140,10 @@ namespace Circuit
 
         public override void Analyze(Analysis Mna)
         {
-            if (closed)
-                Conductor.Analyze(Mna, Name, Anode, Cathode);
+            SinglePoleSwitch.Analyze(Mna, Name, Anode, Cathode, Closed);
         }
 
-        public override void LayoutSymbol(SymbolLayout Sym)
+        protected internal override void LayoutSymbol(SymbolLayout Sym)
         {
             base.LayoutSymbol(Sym);
 

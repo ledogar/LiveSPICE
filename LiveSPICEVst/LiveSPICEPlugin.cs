@@ -19,12 +19,11 @@ namespace LiveSPICEVst
     public class LiveSPICEPlugin : AudioPluginWPF
     {
         public SimulationProcessor SimulationProcessor { get; private set; }
-        public EditorView EditorView { get; set; }
+        new public EditorView EditorView { get; set; }
         public string SchematicPath { get { return SimulationProcessor.SchematicPath; } }
 
-        AudioIOPort monoInput;
-        AudioIOPort monoOutput;
-        EditorWindow editorWindow;
+        AudioIOPortManaged monoInput;
+        AudioIOPortManaged monoOutput;
 
         bool haveSimulationError = false;
 
@@ -53,8 +52,8 @@ namespace LiveSPICEVst
         {
             base.Initialize();
 
-            InputPorts = new AudioIOPort[] { monoInput = new AudioIOPort("Mono Input", EAudioChannelConfiguration.Mono) };
-            OutputPorts = new AudioIOPort[] { monoOutput = new AudioIOPort("Mono Output", EAudioChannelConfiguration.Mono) };
+            InputPorts = new AudioIOPortManaged[] { monoInput = new AudioIOPortManaged("Mono Input", EAudioChannelConfiguration.Mono) };
+            OutputPorts = new AudioIOPortManaged[] { monoOutput = new AudioIOPortManaged("Mono Output", EAudioChannelConfiguration.Mono) };
         }
 
         public override void InitializeProcessing()
@@ -87,17 +86,23 @@ namespace LiveSPICEVst
                 Iterations = SimulationProcessor.Iterations
             };
 
-            foreach (ComponentWrapper wrapper in SimulationProcessor.InteractiveComponents)
+            foreach (var wrapper in SimulationProcessor.InteractiveComponents)
             {
-                if (wrapper is PotWrapper)
+                switch (wrapper)
                 {
-                    programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = (wrapper as PotWrapper).PotValue });
+                    case PotWrapper potWrapper:
+                        programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = potWrapper.PotValue });
+                        break;
+
+                    case DoubleThrowWrapper doubleThrowWrapper:
+                        programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = doubleThrowWrapper.Engaged ? 1 : 0 });
+                        break;
+
+                    case MultiThrowWrapper multiThrowWrapper:
+                        programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = multiThrowWrapper.Position });
+                        break;
                 }
-                else if (wrapper is ButtonWrapper)
-                {
-                    programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = (wrapper as ButtonWrapper).Engaged ? 1 : 0 });
-                }
-            }
+             }
 
             XmlSerializer serializer = new XmlSerializer(typeof(VstProgramParameters));
 
@@ -141,20 +146,23 @@ namespace LiveSPICEVst
 
                     foreach (VSTProgramControlParameter controlParameter in programParameters.ControlParameters)
                     {
-                        ComponentWrapper wrapper = SimulationProcessor.InteractiveComponents.Where(i => i.Name == controlParameter.Name).SingleOrDefault();
+                        var wrapper = SimulationProcessor.InteractiveComponents.Where(i => i.Name == controlParameter.Name).SingleOrDefault();
 
                         if (wrapper != null)
                         {
-                            if (wrapper.Name == controlParameter.Name)
+                            switch (wrapper)
                             {
-                                if (wrapper is PotWrapper)
-                                {
-                                    (wrapper as PotWrapper).PotValue = controlParameter.Value;
-                                }
-                                else if (wrapper is ButtonWrapper)
-                                {
-                                    (wrapper as ButtonWrapper).Engaged = (controlParameter.Value == 1);
-                                }
+                                case PotWrapper potWrapper:
+                                    potWrapper.PotValue = controlParameter.Value;
+                                    break;
+
+                                case DoubleThrowWrapper doubleThrowWrapper:
+                                    doubleThrowWrapper.Engaged = (controlParameter.Value == 1);
+                                    break;
+
+                                case MultiThrowWrapper multiThrowWrapper:
+                                    multiThrowWrapper.Position = (int)controlParameter.Value;
+                                    break;
                             }
                         }
                     }
@@ -194,9 +202,6 @@ namespace LiveSPICEVst
                 double[][] inBuffers = monoInput.GetAudioBuffers();
                 double[][] outBuffers = monoOutput.GetAudioBuffers();
 
-                // Read input samples from unmanaged memory
-                monoInput.ReadData();
-
                 try
                 {
                     SimulationProcessor.RunSimulation(inBuffers, outBuffers, inBuffers[0].Length);
@@ -210,9 +215,6 @@ namespace LiveSPICEVst
                         MessageBox.Show("Error running circuit simulation.\n\n" + ex.Message, "Simulation Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }).Start();
                 }
-
-                // Write outout samples to unmanaged memory
-                monoOutput.WriteData();
             }
         }
     }

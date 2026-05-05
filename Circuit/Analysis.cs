@@ -218,18 +218,20 @@ namespace Circuit
         /// <returns></returns>
         public Expression AddUnknownEqualTo(string Name, Expression Eq)
         {
+            // Find an existing unknown that may just be a constant factor of this one.
             IEnumerable<Equal> eqs = equations.Concat(context.Equations);
-            Equal eq = eqs.FirstOrDefault(i => Component.IsDependentVariable(i.Left, Component.t) && i.Right.Equals(Eq));
-            if (eq is null)
+            foreach (Equal i in eqs.Where(j => !j.Right.EqualsZero() && Component.IsDependentVariable(j.Left, Component.t)))
             {
-                Expression x = AddUnknown(Name);
-                AddEquation(x, Eq);
-                return x;
+                Expression factor = Eq / i.Right;
+                if (factor is Constant)
+                {
+                    // Existing unknown is a constant factor of this new unknown.
+                    return i.Left * factor;
+                }
             }
-            else
-            {
-                return eq.Left;
-            }
+            Expression x = AddUnknown(Name);
+            AddEquation(x, Eq);
+            return x;
         }
         /// <summary>
         /// Add an anonymous unknown to the system with a known equation.
@@ -251,19 +253,19 @@ namespace Circuit
         /// <returns></returns>
         public string AnonymousName() { return context.AnonymousName(); }
 
-        private void AddKcl(Dictionary<Expression, Expression> Kcl, Expression V, Expression i)
+        private void AddKcl(Dictionary<Expression, Expression> kcl, Expression V, Expression i)
         {
-            if (Kcl.TryGetValue(V, out Expression sumi))
+            if (kcl.TryGetValue(V, out var sumi))
             {
                 // preserve null (arbitrary current).
                 if (i is null)
-                    Kcl[V] = null;
-                else if (sumi is object)
-                    Kcl[V] = sumi + i;
+                    kcl[V] = null;
+                else if (sumi != null)
+                    kcl[V] = sumi + i;
             }
             else
             {
-                Kcl[V] = i;
+                kcl[V] = i;
             }
         }
 

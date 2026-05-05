@@ -77,24 +77,28 @@ namespace Circuit
 
             // Evaluate for simulation functions.
             // Define T = step size.
-            Analysis.Add("T", h);
+            DynamicNamespace globals = new DynamicNamespace();
+            globals.Add("T", h);
             // Define d[t] = delta function.
-            // TODO: This should probably be centered around 0, and also have an integral of 1 (i.e. a width of 1 / h).
-            Analysis.Add(ExprFunction.New("d", Call.If((0 <= t) & (t < h), 1, 0), t));
+            // TODO: This should probably be centered around 0, and also have an integral of 1 (i.e. a height of 1 / h).
+            globals.Add(ExprFunction.New("d", Call.If((0 <= t) & (t < h), 1, 0), t));
             // Define u[t] = step function.
-            Analysis.Add(ExprFunction.New("u", Call.If(t >= 0, 1, 0), t));
-            mna = mna.Resolve(Analysis).OfType<Equal>().ToList();
+            globals.Add(ExprFunction.New("u", Call.If(t >= 0, 1, 0), t));
+            mna = mna.Resolve(Analysis).Resolve(globals).OfType<Equal>().ToList();
 
             // Find out what variables have differential relationships.
             List<Expression> dy_dt = y.Where(i => mna.Any(j => j.DependsOn(D(i, t)))).Select(i => D(i, t)).ToList();
+            Log.WriteLine(MessageType.Verbose, "Differential unknowns: {0}", String.Join(", ", dy_dt));
 
             // Find steady state solution for initial conditions.
             List<Arrow> initial = InitialConditions.ToList();
             Log.WriteLine(MessageType.Info, "Performing steady state analysis...");
+            LogExpressions(Log, MessageType.Verbose, "Initial conditions for solve:", initial);
+            LogExpressions(Log, MessageType.Verbose, "Initial conditions from analysis:", Analysis.InitialConditions);
 
             SystemOfEquations dc = new SystemOfEquations(mna
                 // Derivatives, t, and T are zero in the steady state.
-                .Substitute(dy_dt.Select(i => Arrow.New(i, 0)).Append(Arrow.New(t, 0), Arrow.New(T, 0)))
+                .Substitute(dy_dt.Select(i => Arrow.New(i, 0)).Append(Arrow.New(t, 0), Arrow.New(T, 0), SinglePoleSwitch.IncludeOpen))
                 // Use the initial conditions from analysis.
                 .Substitute(Analysis.InitialConditions)
                 // Evaluate variables at t=0.
@@ -103,11 +107,12 @@ namespace Circuit
             // Solve partitions independently.
             foreach (SystemOfEquations i in dc.Partition())
             {
+                LogExpressions(Log, MessageType.Verbose, "Steady state system for partition:", i.Select(j => Equal.New(j, 0)));
                 try
                 {
                     List<Arrow> part = i.Equations.Select(j => Equal.New(j, 0)).NSolve(i.Unknowns.Select(j => Arrow.New(j, 0)));
                     initial.AddRange(part);
-                    LogExpressions(Log, MessageType.Verbose, "Initial conditions:", part);
+                    LogExpressions(Log, MessageType.Verbose, "Initial conditions:", part); 
                 }
                 catch (Exception)
                 {
@@ -118,11 +123,12 @@ namespace Circuit
             // Transient analysis of the system.
             Log.WriteLine(MessageType.Info, "Performing transient analysis...");
 
-            SystemOfEquations system = new SystemOfEquations(mna, dy_dt.Concat(y));
+            SystemOfEquations system = new SystemOfEquations(mna.Substitute(SinglePoleSwitch.ExcludeOpen).OfType<Equal>(), dy_dt.Concat(y));
 
             // Solve the diff eq for dy/dt and integrate the results.
             system.RowReduce(dy_dt);
             system.BackSubstitute(dy_dt);
+            LogExpressions(Log, MessageType.Verbose, "Differential equations:", system.Where(i => i.DependsOn(dy_dt)).Select(i => Equal.New(i, 0)));
             IEnumerable<Equal> integrated = system.Solve(dy_dt)
                 .NDIntegrate(t, h, IntegrationMethod.BackwardDifferenceFormula2)
                 .Select(i => Equal.New(i.Left, i.Right)).Buffer();
@@ -131,12 +137,16 @@ namespace Circuit
 
             LogExpressions(Log, MessageType.Verbose, "Discretized system:", system.Select(i => Equal.New(i, 0)));
 
+            if (system.DependsOn(dy_dt))
+                throw new Exception("Failed to eliminate differentials from system of equations.");
+
             // Solving the system...
             List<SolutionSet> solutions = new List<SolutionSet>();
 
             // Partition the system into independent systems of equations.
             foreach (SystemOfEquations F in system.Partition())
             {
+                Log.WriteLine(MessageType.Verbose, "Partition unknowns: {0}", String.Join(", ", F.Unknowns));
                 // Find linear solutions for y. Linear systems should be completely solved here.
                 F.RowReduce();
                 IEnumerable<Arrow> linear = F.Solve();
@@ -172,7 +182,7 @@ namespace Circuit
                     guess = Factor(guess);
 
                     // Newton system equations.
-                    IEnumerable<LinearCombination> equations = nonlinear.Equations;
+                    IEnumerable<LinearCombination> equations = nonlinear.Equations.Buffer();
                     equations = Factor(equations);
 
                     solutions.Add(new NewtonIteration(solved, equations, nonlinear.Unknowns, guess));
@@ -184,6 +194,9 @@ namespace Circuit
             Log.WriteLine(MessageType.Info, "System solved, {0} solution sets for {1} unknowns.",
                 solutions.Count,
                 solutions.Sum(i => i.Unknowns.Count()));
+
+            // Solutions from `Solve` might depend on previous solutions, so we need to make sure to emit the solutions in the order that satisifies such dependencies.
+            solutions.Reverse();
 
             return new TransientSolution(
                 h,

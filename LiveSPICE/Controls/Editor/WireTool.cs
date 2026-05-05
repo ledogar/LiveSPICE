@@ -20,10 +20,12 @@ namespace LiveSPICE
                 Fill = null,
                 Stroke = ElementControl.HighlightPen.Brush,
                 StrokeThickness = 1,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                StrokeLineJoin = PenLineJoin.Round,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center,
                 Visibility = Visibility.Hidden,
-                SnapsToDevicePixels = true,
                 Data = new PathGeometry()
             };
         }
@@ -49,8 +51,8 @@ namespace LiveSPICE
             {
                 LineGeometry line = new LineGeometry()
                 {
-                    StartPoint = Target.ToPoint(points[i]) + new Vector(0.5, -0.5),
-                    EndPoint = Target.ToPoint(points[i + 1]) + new Vector(0.5, -0.5)
+                    StartPoint = Target.ToPoint(points[i]),
+                    EndPoint = Target.ToPoint(points[i + 1])
                 };
                 ((PathGeometry)path.Data).AddGeometry(line);
             }
@@ -60,8 +62,11 @@ namespace LiveSPICE
         {
             ((PathGeometry)path.Data).Clear();
             path.Visibility = Visibility.Hidden;
-            Editor.AddWire(Editor.FindWirePath(mouse));
-            mouse = null;
+            if (mouse != null)
+            {
+                Editor.AddWire(Editor.FindWirePath(mouse));
+                mouse = null;
+            }
 
             if ((Keyboard.Modifiers & ModifierKeys.Control) == 0)
                 Target.Tool = new SelectionTool(Editor);

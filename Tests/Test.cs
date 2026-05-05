@@ -1,10 +1,11 @@
 ﻿using Circuit;
 using ComputerAlgebra;
-using ComputerAlgebra.Plotting;
+using Plotting;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Util;
 
 namespace Tests
@@ -40,8 +41,8 @@ namespace Tests
             int Samples,
             int Oversample,
             int Iterations,
-            Expression Input = null,
-            IEnumerable<Expression> Outputs = null)
+            Expression? Input = null,
+            IEnumerable<Expression>? Outputs = null)
         {
             Analysis analysis = C.Analyze();
             TransientSolution TS = TransientSolution.Solve(analysis, (Real)1 / (SampleRate * Oversample));
@@ -98,23 +99,22 @@ namespace Tests
         /// Benchmark a circuit simulation.
         /// By default, benchmarks producing the sum of all output components.
         /// </summary>
-        /// <returns>The rate at which the circuit simulated, in samples per second.</returns>
-        public void Benchmark(
+        /// <returns>{analyze time, solve time, simulate rate} in seconds or Hz</returns>
+        public double[] Benchmark(
             Circuit.Circuit C,
             Func<double, double> Vin,
             int SampleRate,
             int Oversample,
             int Iterations,
-            Expression Input = null,
-            IEnumerable<Expression> Outputs = null)
+            Expression? Input = null,
+            IEnumerable<Expression>? Outputs = null,
+            ILog? log = null)
         {
-            Analysis analysis = null;
+            Analysis? analysis = null;
             double analyzeTime = Benchmark(1, () => analysis = C.Analyze());
-            System.Console.WriteLine("Circuit.Analyze time: {0:G3} ms", analyzeTime * 1000);
 
-            TransientSolution TS = null;
-            double solveTime = Benchmark(1, () => TS = TransientSolution.Solve(analysis, (Real)1 / (SampleRate * Oversample)));
-            System.Console.WriteLine("TransientSolution.Solve time: {0:G3} ms", solveTime * 1000);
+            TransientSolution? TS = null;
+            double solveTime = Benchmark(1, () => TS = TransientSolution.Solve(analysis, (Real)1 / (SampleRate * Oversample), log));
 
             // By default, pass Vin to each input of the circuit.
             if (Input == null)
@@ -152,7 +152,7 @@ namespace Tests
                 S.Run(inputBuffer, outputBuffers);
             });
             double rate = N / runTime;
-            System.Console.WriteLine("{0:G3} kHz, {1:G3}x real time", rate / 1000, rate / SampleRate);
+            return new double[] { analyzeTime, solveTime, rate };
         }
 
         public void PlotAll(string Title, Dictionary<Expression, List<double>> Outputs)
@@ -172,7 +172,27 @@ namespace Tests
                 i.Value.Select((k, n) => new KeyValuePair<double, double>(n, k)).ToArray())
             { Name = i.Key.ToString() }));
 
-            p.Save(Title + ".bmp");
+            System.IO.Directory.CreateDirectory("Plots");
+            p.Save("Plots\\" + Title + ".bmp");
+        }
+        public void WriteStatistics(string Title, Dictionary<Expression, List<double>> Outputs)
+        {
+            string cols = "{0}, {1}, {2}, {3}, {4}";
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(string.Format(cols, "var", "mean", "min", "max", "rms"));
+            foreach (var i in Outputs)
+            {
+                double mean = i.Value.Sum() / i.Value.Count;
+                double min = i.Value.Min();
+                double max = i.Value.Max();
+                double rms = Math.Sqrt(i.Value.Select(v => v * v).Sum()) / i.Value.Count;
+                sb.AppendLine(string.Format(cols, i.Key, mean, min, max, rms));
+            }
+
+            string path = "Stats\\" + Title + ".csv";
+            System.IO.Directory.CreateDirectory("Stats");
+            File.WriteAllText(path, sb.ToString());
         }
     }
 }

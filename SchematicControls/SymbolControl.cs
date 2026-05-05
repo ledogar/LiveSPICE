@@ -20,8 +20,8 @@ namespace SchematicControls
     {
         private static readonly Pen TextOutline = new Pen(new SolidColorBrush(Color.FromArgb(32, 0, 0, 0)), 0.2);
 
-        static SymbolControl() 
-        { 
+        static SymbolControl()
+        {
             DefaultStyleKeyProperty.OverrideMetadata(typeof(SymbolControl), new FrameworkPropertyMetadata(typeof(SymbolControl)));
         }
 
@@ -97,7 +97,7 @@ namespace SchematicControls
         {
             get
             {
-                Circuit.Coord offset = (layout.LowerBound + layout.UpperBound) / 2;
+                var offset = (layout.LowerBound + layout.UpperBound) / 2;
 
                 Matrix transform = new Matrix();
                 transform.Translate(-offset.x, -offset.y);
@@ -115,12 +115,9 @@ namespace SchematicControls
         }
 
         protected DrawingContext dc;
-        protected override void OnRender(DrawingContext drawingContext)
+        protected override void OnRender(DrawingContext dc)
         {
             Matrix transform = Transform;
-
-            dc = drawingContext;
-            dc.PushGuidelineSet(SymbolControl.Guidelines);
 
             DrawLayout(
                 layout, dc, transform, Pen, ShowText ? FontFamily : null, FontWeight, FontSize,
@@ -131,9 +128,6 @@ namespace SchematicControls
                 dc.DrawRectangle(null, SelectedPen, bounds);
             else if (Highlighted)
                 dc.DrawRectangle(null, HighlightPen, bounds);
-
-            dc.Pop();
-            dc = null;
         }
 
         private static Point T(Matrix Tx, Circuit.Point x) { return Tx.Transform(new Point(x.x, x.y)); }
@@ -142,8 +136,6 @@ namespace SchematicControls
             Circuit.SymbolLayout Layout, DrawingContext Context, Matrix Tx, Pen Pen, FontFamily FontFamily,
             FontWeight FontWeight, double FontSize, double PixelsPerDip)
         {
-            Context.PushGuidelineSet(Guidelines);
-
             foreach (Circuit.SymbolLayout.Shape i in Layout.Lines)
                 Context.DrawLine(
                     Pen ?? MapToPen(i.Edge),
@@ -179,6 +171,23 @@ namespace SchematicControls
                     Context.DrawLine(pen, x1, x2);
                     x1 = x2;
                 }
+            }
+            foreach (var arc in Layout.Arcs)
+            {
+                var sweepDir = arc.Direction == Circuit.Direction.Clockwise ^ Tx.Determinant > 0d ? SweepDirection.Clockwise : SweepDirection.Counterclockwise;
+                bool isLargeArc = Math.Abs(arc.StartAngle - arc.EndAngle) > Math.PI;
+
+                var start = T(Tx, arc.Center + (new Circuit.Point(Math.Cos(arc.StartAngle), Math.Sin(arc.StartAngle)) * arc.Radius));
+                var end = T(Tx, arc.Center + (new Circuit.Point(Math.Cos(arc.EndAngle), Math.Sin(arc.EndAngle)) * arc.Radius));
+
+                var arcGeometry = new StreamGeometry();
+                using (var ctx = arcGeometry.Open())
+                {
+                    ctx.BeginFigure(start, false, false);
+                    ctx.ArcTo(end, new Size(Math.Abs(arc.Radius * Tx.M11), Math.Abs(arc.Radius * Tx.M22)), 0, isLargeArc, sweepDir, true, true);
+                }
+                arcGeometry.Freeze();
+                Context.DrawGeometry(null, Pen ?? MapToPen(arc.Type), arcGeometry);
             }
 
             if (FontFamily != null)
@@ -227,8 +236,6 @@ namespace SchematicControls
                 Pen pen = MapToPen(i.ConnectedTo is null ? Circuit.EdgeType.Red : Circuit.EdgeType.Wire);
                 Context.DrawRectangle(pen.Brush, pen, new Rect(x - dx, x + dx));
             }
-
-            Context.Pop();
         }
 
         public static void DrawLayout(

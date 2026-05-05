@@ -29,8 +29,8 @@ namespace Circuit
         public override string PartNumber { get { AssertImpl(); return impl.PartNumber; } set { AssertImpl(); impl.PartNumber = value; NotifyChanged(nameof(PartNumber)); } }
         public override IEnumerable<Terminal> Terminals { get { AssertImpl(); return impl.Terminals; } }
         public override void Analyze(Analysis Mna) { AssertImpl(); impl.Analyze(Mna); }
-        public override void LayoutSymbol(SymbolLayout Sym) { AssertImpl(); impl.LayoutSymbol(Sym); }
-
+        protected internal override void LayoutSymbol(SymbolLayout Sym) { AssertImpl(); impl.LayoutSymbol(Sym); }
+        public override object Tag { get => impl.Tag; set => impl.Tag = value; }
         public override string TypeName { get { return PartNumber; } }
 
         public override XElement Serialize()
