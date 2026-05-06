@@ -4,6 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>LiveSPICE.Avalonia</AssemblyName>
     <Product>LiveSPICE.Avalonia</Product>
   </PropertyGroup>
@@ -16,6 +17,7 @@
     <ProjectReference Include="..\Audio\Audio.csproj" />
     <ProjectReference Include="..\Circuit\Circuit.csproj" />
     <ProjectReference Include="..\ComputerAlgebra\ComputerAlgebra\ComputerAlgebra.csproj" />
+    <ProjectReference Include="..\LiveSPICE.PluginCore\LiveSPICE.PluginCore.csproj" />
     <ProjectReference Include="..\Util\Util.csproj" />
   </ItemGroup>
   <ItemGroup>

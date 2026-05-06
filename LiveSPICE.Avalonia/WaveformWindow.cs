@@ -23,14 +23,16 @@ public sealed class WaveformWindow : Window
     private readonly Slider outputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
     private readonly TextBlock audioConfig = new TextBlock { TextWrapping = TextWrapping.Wrap };
     private readonly TextBox log = new TextBox { IsReadOnly = true, AcceptsReturn = true, MinHeight = 100, TextWrapping = TextWrapping.Wrap };
-    private readonly object simulationLock = new object();
+    private readonly LiveAudioProcessor liveProcessor;
+    private double liveInputScale = 1;
+    private double liveOutputScale = 1;
     private Audio.Stream? liveStream;
-    private Simulation? liveSimulation;
 
     public WaveformWindow(Schematic schematic, AppSettings settings)
     {
         this.schematic = schematic;
         this.settings = settings;
+        liveProcessor = new LiveAudioProcessor(schematic);
         Title = "Simulation Scope";
         Width = 1000;
         Height = 700;
@@ -69,6 +71,8 @@ public sealed class WaveformWindow : Window
         Grid main = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), RowDefinitions = new RowDefinitions("*,150") };
 
         StackPanel audio = new StackPanel { Spacing = 10, Margin = new global::Avalonia.Thickness(10) };
+        inputGain.PropertyChanged += (_, e) => { if (e.Property == Slider.ValueProperty) liveInputScale = DbToLinear(inputGain.Value); };
+        outputGain.PropertyChanged += (_, e) => { if (e.Property == Slider.ValueProperty) liveOutputScale = DbToLinear(outputGain.Value); };
         audio.Children.Add(Header("Audio"));
         audio.Children.Add(audioConfig);
         audio.Children.Add(Button("Configure", (_, _) =>
@@ -163,16 +167,12 @@ public sealed class WaveformWindow : Window
 
             int oversampleValue = ParseInt(oversample.Text, 8, 1, 64);
             int iterationValue = ParseInt(iterations.Text, 8, 1, 64);
-            lock (simulationLock)
-            {
-                liveSimulation = AudioSimulationFactory.Create(schematic.Build(), 48000, oversampleValue, iterationValue);
-            }
+            liveInputScale = DbToLinear(inputGain.Value);
+            liveOutputScale = DbToLinear(outputGain.Value);
+            StartLiveSimulation(48000, oversampleValue, iterationValue);
 
             liveStream = device.Open(ProcessLiveSamples, input, output);
-            lock (simulationLock)
-            {
-                liveSimulation = AudioSimulationFactory.Create(schematic.Build(), liveStream.SampleRate, oversampleValue, iterationValue);
-            }
+            StartLiveSimulation(liveStream.SampleRate, oversampleValue, iterationValue);
             log.Text = $"Live stream started\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {device.Name}\nSample rate: {liveStream.SampleRate:0}";
         }
         catch (Exception ex)
@@ -188,47 +188,19 @@ public sealed class WaveformWindow : Window
         liveStream = null;
         if (stream != null)
             stream.Stop();
-        lock (simulationLock)
-        {
-            liveSimulation = null;
-        }
+        liveProcessor.Stop();
     }
 
     private void ProcessLiveSamples(int count, Audio.SampleBuffer[] input, Audio.SampleBuffer[] output, double rate)
     {
         try
         {
-            Simulation? simulation;
-            lock (simulationLock)
-                simulation = liveSimulation;
+            liveProcessor.InputScale = liveInputScale;
+            liveProcessor.OutputScale = liveOutputScale;
+            double[] outputSamples = liveProcessor.Process(count, input, output, rate);
 
-            if (simulation == null)
-            {
-                foreach (Audio.SampleBuffer buffer in output)
-                    buffer.Clear();
-                return;
-            }
-
-            double inputScale = DbToLinear(inputGain.Value);
-            double outputScale = DbToLinear(outputGain.Value);
-            double[] inputSamples = new double[count];
-            if (input.Length > 0)
-                Array.Copy(input[0].Samples, inputSamples, count);
-            else
-                for (int sample = 0; sample < count; sample++)
-                    inputSamples[sample] = 0.25 * Math.Sin(2 * Math.PI * 440 * (simulation.Time + sample / rate));
-            for (int sample = 0; sample < count; sample++)
-                inputSamples[sample] *= inputScale;
-
-            double[] outputSamples = new double[count];
-            lock (simulationLock)
-                simulation.Run(count, new[] { inputSamples }, new[] { outputSamples });
-            for (int sample = 0; sample < count; sample++)
-                outputSamples[sample] *= outputScale;
-            foreach (Audio.SampleBuffer buffer in output)
-                Array.Copy(outputSamples, buffer.Samples, count);
-
-            Dispatcher.UIThread.Post(() => waveform.SetSamples(outputSamples, (int)rate));
+            if (outputSamples.Length > 0)
+                Dispatcher.UIThread.Post(() => waveform.SetSamples(outputSamples, (int)rate));
         }
         catch (Exception ex)
         {
@@ -236,6 +208,20 @@ public sealed class WaveformWindow : Window
                 buffer.Clear();
             Dispatcher.UIThread.Post(() => log.Text = ex.ToString());
         }
+    }
+
+    internal void StartLiveSimulation(double sampleRate, int oversampleValue = 8, int iterationValue = 8)
+    {
+        liveInputScale = DbToLinear(inputGain.Value);
+        liveOutputScale = DbToLinear(outputGain.Value);
+        liveProcessor.InputScale = liveInputScale;
+        liveProcessor.OutputScale = liveOutputScale;
+        liveProcessor.Start(sampleRate, oversampleValue, iterationValue);
+    }
+
+    internal void TestProcessLiveSamples(int count, Audio.SampleBuffer[] input, Audio.SampleBuffer[] output, double rate)
+    {
+        ProcessLiveSamples(count, input, output, rate);
     }
 
     private Audio.Device SelectedDevice()

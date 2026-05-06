@@ -41,6 +41,16 @@ public sealed class SimulationAndAudioTests
     }
 
     [Fact]
+    public void LinuxAudioDiscoveryFiltersNonAudioPorts()
+    {
+        LinuxAudioDriver driver = new LinuxAudioDriver();
+
+        Assert.Equal("PipeWire/JACK", driver.Name);
+        foreach (Audio.Device device in driver.Devices)
+            Assert.DoesNotContain(device.InputChannels.Concat(device.OutputChannels), i => i.Name.StartsWith("Midi-Bridge:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void VirtualAudioStreamInvokesCallbackUntilStopped()
     {
         VirtualAudioDriver driver = new VirtualAudioDriver();
@@ -62,6 +72,22 @@ public sealed class SimulationAndAudioTests
         Assert.True(called.Wait(TimeSpan.FromSeconds(2)));
         stream.Stop();
         Assert.True(callbackCount > 0);
+    }
+
+    [Fact]
+    public async Task LiveAudioProcessorCanRunOffUiThread()
+    {
+        Schematic schematic = Schematic.Load(FindFixture("Tests/Circuits/Passive 1stOrder Highpass RC.schx"));
+        LiveAudioProcessor processor = new LiveAudioProcessor(schematic);
+        processor.Start(48000, 8, 8);
+        using Audio.SampleBuffer input = new Audio.SampleBuffer(128);
+        using Audio.SampleBuffer output = new Audio.SampleBuffer(128);
+        for (int i = 0; i < input.Samples.Length; i++)
+            input[i] = Math.Sin(2 * Math.PI * 440 * i / 48000);
+
+        await Task.Run(() => processor.Process(128, new[] { input }, new[] { output }, 48000));
+
+        Assert.Contains(output.Samples, i => Math.Abs(i) > 1e-12);
     }
 
     private static string FindFixture(string relativePath)
