@@ -12,6 +12,7 @@ namespace LiveSPICE.Avalonia;
 public sealed class WaveformWindow : Window
 {
     private readonly Schematic schematic;
+    private readonly AppSettings settings;
     private readonly WaveformView waveform = new WaveformView();
     private readonly TextBox oversample = new TextBox { Text = "8", Width = 52 };
     private readonly TextBox iterations = new TextBox { Text = "8", Width = 52 };
@@ -19,17 +20,20 @@ public sealed class WaveformWindow : Window
     private readonly TextBox frequency = new TextBox { Text = "440", Width = 72 };
     private readonly Slider inputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
     private readonly Slider outputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
+    private readonly TextBlock audioConfig = new TextBlock { TextWrapping = TextWrapping.Wrap };
     private readonly TextBox log = new TextBox { IsReadOnly = true, AcceptsReturn = true, MinHeight = 100, TextWrapping = TextWrapping.Wrap };
 
-    public WaveformWindow(Schematic schematic)
+    public WaveformWindow(Schematic schematic, AppSettings settings)
     {
         this.schematic = schematic;
+        this.settings = settings;
         Title = "Simulation Scope";
         Width = 1000;
         Height = 700;
         MinWidth = 520;
         MinHeight = 420;
         Content = BuildContent();
+        UpdateAudioSummary();
         RunSimulation();
     }
 
@@ -60,14 +64,21 @@ public sealed class WaveformWindow : Window
 
         StackPanel audio = new StackPanel { Spacing = 10, Margin = new global::Avalonia.Thickness(10) };
         audio.Children.Add(Header("Audio"));
+        audio.Children.Add(audioConfig);
+        audio.Children.Add(Button("Configure", (_, _) =>
+        {
+            AudioConfigWindow window = new AudioConfigWindow(settings);
+            window.Closed += (_, _) => UpdateAudioSummary();
+            window.Show();
+        }));
         audio.Children.Add(Label("Input gain (dB)"));
         audio.Children.Add(inputGain);
         audio.Children.Add(Label("Output gain (dB)"));
         audio.Children.Add(outputGain);
         audio.Children.Add(Header("Input"));
-        audio.Children.Add(new TextBlock { Text = "Generated sine", TextWrapping = TextWrapping.Wrap });
+        audio.Children.Add(new TextBlock { Text = "Generated sine" });
         audio.Children.Add(Header("Output"));
-        audio.Children.Add(new TextBlock { Text = "First output channel", TextWrapping = TextWrapping.Wrap });
+        audio.Children.Add(new TextBlock { Text = "First output channel" });
         Grid.SetColumn(audio, 0);
         Grid.SetRowSpan(audio, 2);
         main.Children.Add(audio);
@@ -112,7 +123,7 @@ public sealed class WaveformWindow : Window
                 output[i] *= outGain;
 
             waveform.SetSamples(output, sampleRate);
-            log.Text = $"Build succeeded\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {output.Select(Math.Abs).DefaultIfEmpty().Max():R}";
+            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {output.Select(Math.Abs).DefaultIfEmpty().Max():R}";
         }
         catch (Exception ex)
         {
@@ -123,6 +134,21 @@ public sealed class WaveformWindow : Window
     private static TextBlock Header(string text)
     {
         return new TextBlock { Text = text, FontWeight = FontWeight.Bold, Margin = new global::Avalonia.Thickness(0, 8, 0, 0) };
+    }
+
+    private void UpdateAudioSummary()
+    {
+        audioConfig.Text = $"{AudioName(settings.AudioDriver)} / {AudioName(settings.AudioDevice)}\nIn: {ChannelNames(settings.AudioInputs)}\nOut: {ChannelNames(settings.AudioOutputs)}";
+    }
+
+    private static string AudioName(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "None" : value;
+    }
+
+    private static string ChannelNames(System.Collections.Generic.IReadOnlyCollection<string> channels)
+    {
+        return channels.Count == 0 ? "None" : string.Join(", ", channels);
     }
 
     private static TextBlock Label(string text)

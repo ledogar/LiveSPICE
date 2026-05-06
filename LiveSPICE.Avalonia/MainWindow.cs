@@ -172,7 +172,7 @@ public sealed class MainWindow : Window
                     {
                         MenuItem("Audio Settings", (_, _) => new AudioConfigWindow(settings).Show()),
                         MenuItem("Validate Build", (_, _) => ValidateActiveCircuit()),
-                        MenuItem("Render Smoke", (_, _) => RenderSmoke())
+                        MenuItem("Run Simulation", (_, _) => RunSimulation())
                     }
                 },
                 new MenuItem
@@ -214,7 +214,7 @@ public sealed class MainWindow : Window
                 Button("Paste", async (_, _) => await PasteSelectionAsync()),
                 Button("Delete", (_, _) => ActiveCanvas?.DeleteSelection()),
                 Button("Wire", (_, _) => BeginWireTool()),
-                Button("Run", (_, _) => RenderSmoke()),
+                Button("Run", (_, _) => RunSimulation()),
                 Button("+", (_, _) => ZoomActive(1.2), 36),
                 Button("-", (_, _) => ZoomActive(1 / 1.2), 36),
                 Button("Fit", (_, _) => ActiveCanvas?.FitToView())
@@ -657,14 +657,14 @@ public sealed class MainWindow : Window
         status.Text = "Redo";
     }
 
-    private void RenderSmoke()
+    private void RunSimulation()
     {
         try
         {
             if (ActiveDocument == null)
                 return;
 
-            new WaveformWindow(ActiveDocument.Schematic).Show();
+            new WaveformWindow(ActiveDocument.Schematic, settings).Show();
             status.Text = "Simulation window opened";
         }
         catch (Exception ex)
@@ -757,7 +757,7 @@ public sealed class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.F5:
-                RenderSmoke();
+                RunSimulation();
                 e.Handled = true;
                 break;
             case Key.Left:

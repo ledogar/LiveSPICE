@@ -15,6 +15,7 @@ public sealed class AudioConfigWindow : Window
     private readonly ListBox inputs = new ListBox { SelectionMode = SelectionMode.Multiple };
     private readonly ListBox outputs = new ListBox { SelectionMode = SelectionMode.Multiple };
     private readonly TextBlock status = new TextBlock();
+    private Audio.Stream? testStream;
 
     public AudioConfigWindow(AppSettings settings)
     {
@@ -24,8 +25,11 @@ public sealed class AudioConfigWindow : Window
         Height = 500;
         MinWidth = 520;
         MinHeight = 360;
+        drivers.SelectionChanged += (_, _) => PopulateDevices();
+        devices.SelectionChanged += (_, _) => PopulateChannels();
         Content = BuildContent();
         PopulateDrivers();
+        Closed += (_, _) => StopTest();
     }
 
     private Control BuildContent()
@@ -40,6 +44,7 @@ public sealed class AudioConfigWindow : Window
             Margin = new global::Avalonia.Thickness(10)
         };
         buttons.Children.Add(Button("Refresh", (_, _) => PopulateDrivers()));
+        buttons.Children.Add(Button("Test", (_, _) => ToggleTest()));
         buttons.Children.Add(Button("Save", (_, _) => SaveAndClose()));
         DockPanel.SetDock(buttons, Dock.Bottom);
         root.Children.Add(buttons);
@@ -67,7 +72,6 @@ public sealed class AudioConfigWindow : Window
         List<Audio.Driver> availableDrivers = Audio.Driver.Drivers.ToList();
         drivers.ItemsSource = availableDrivers;
         drivers.SelectedItem = availableDrivers.FirstOrDefault(i => i.Name == settings.AudioDriver) ?? availableDrivers.FirstOrDefault();
-        drivers.SelectionChanged += (_, _) => PopulateDevices();
         PopulateDevices();
         status.Text = availableDrivers.Count == 0 ? "No audio drivers are available in this build." : "Ready";
     }
@@ -78,7 +82,6 @@ public sealed class AudioConfigWindow : Window
         List<Audio.Device> availableDevices = driver?.Devices.ToList() ?? new List<Audio.Device>();
         devices.ItemsSource = availableDevices;
         devices.SelectedItem = availableDevices.FirstOrDefault(i => i.Name == settings.AudioDevice) ?? availableDevices.FirstOrDefault();
-        devices.SelectionChanged += (_, _) => PopulateChannels();
         PopulateChannels();
     }
 
@@ -93,12 +96,83 @@ public sealed class AudioConfigWindow : Window
 
     private void SaveAndClose()
     {
+        StopTest();
         settings.AudioDriver = (drivers.SelectedItem as Audio.Driver)?.Name ?? string.Empty;
         settings.AudioDevice = (devices.SelectedItem as Audio.Device)?.Name ?? string.Empty;
         settings.AudioInputs = inputs.SelectedItems?.OfType<Audio.Channel>().Select(i => i.Name).ToList() ?? new List<string>();
         settings.AudioOutputs = outputs.SelectedItems?.OfType<Audio.Channel>().Select(i => i.Name).ToList() ?? new List<string>();
         settings.Save();
         Close();
+    }
+
+    private void ToggleTest()
+    {
+        if (testStream != null)
+        {
+            StopTest();
+            return;
+        }
+
+        Audio.Device? device = devices.SelectedItem as Audio.Device;
+        if (device == null)
+        {
+            status.Text = "No audio device selected.";
+            return;
+        }
+
+        try
+        {
+            testStream = device.Open(TestCallback, SelectedChannels(inputs), SelectedChannels(outputs));
+            drivers.IsEnabled = false;
+            devices.IsEnabled = false;
+            inputs.IsEnabled = false;
+            outputs.IsEnabled = false;
+            status.Text = $"Testing at {testStream.SampleRate:0} Hz";
+        }
+        catch (Exception ex)
+        {
+            status.Text = ex.Message;
+        }
+    }
+
+    private void StopTest()
+    {
+        if (testStream == null)
+            return;
+
+        try
+        {
+            testStream.Stop();
+        }
+        finally
+        {
+            testStream = null;
+            drivers.IsEnabled = true;
+            devices.IsEnabled = true;
+            inputs.IsEnabled = true;
+            outputs.IsEnabled = true;
+            status.Text = "Ready";
+        }
+    }
+
+    private static void TestCallback(int count, Audio.SampleBuffer[] input, Audio.SampleBuffer[] output, double rate)
+    {
+        for (int sample = 0; sample < count; sample++)
+        {
+            double value = 0;
+            foreach (Audio.SampleBuffer buffer in input)
+                value += buffer[sample];
+            if (input.Length == 0)
+                value = 0.15 * Math.Sin(2 * Math.PI * 440 * sample / rate);
+
+            foreach (Audio.SampleBuffer buffer in output)
+                buffer[sample] = value;
+        }
+    }
+
+    private static Audio.Channel[] SelectedChannels(ListBox list)
+    {
+        return list.SelectedItems?.OfType<Audio.Channel>().ToArray() ?? Array.Empty<Audio.Channel>();
     }
 
     private static void SelectSaved(ListBox list, IEnumerable<string> names)
