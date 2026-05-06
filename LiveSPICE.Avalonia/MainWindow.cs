@@ -255,12 +255,14 @@ public sealed class MainWindow : Window
     {
         base.OnOpened(e);
 
-        string? path = Environment.GetCommandLineArgs()
+        string[] paths = Environment.GetCommandLineArgs()
             .Skip(1)
-            .FirstOrDefault(i => i.EndsWith(".schx", StringComparison.OrdinalIgnoreCase) && File.Exists(i));
+            .Where(i => i.EndsWith(".schx", StringComparison.OrdinalIgnoreCase) && File.Exists(i))
+            .ToArray();
 
-        if (path != null)
-            LoadSchematic(path);
+        if (paths.Length > 0)
+            foreach (string path in paths)
+                LoadSchematic(path);
         else
             NewDocument();
 
