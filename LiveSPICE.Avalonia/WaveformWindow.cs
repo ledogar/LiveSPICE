@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Circuit;
 using APoint = Avalonia.Point;
 
@@ -22,6 +23,9 @@ public sealed class WaveformWindow : Window
     private readonly Slider outputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
     private readonly TextBlock audioConfig = new TextBlock { TextWrapping = TextWrapping.Wrap };
     private readonly TextBox log = new TextBox { IsReadOnly = true, AcceptsReturn = true, MinHeight = 100, TextWrapping = TextWrapping.Wrap };
+    private readonly object simulationLock = new object();
+    private Audio.Stream? liveStream;
+    private Simulation? liveSimulation;
 
     public WaveformWindow(Schematic schematic, AppSettings settings)
     {
@@ -35,6 +39,7 @@ public sealed class WaveformWindow : Window
         Content = BuildContent();
         UpdateAudioSummary();
         RunSimulation();
+        Closed += (_, _) => StopLive();
     }
 
     private Control BuildContent()
@@ -57,6 +62,7 @@ public sealed class WaveformWindow : Window
         toolbar.Children.Add(Label("Hz"));
         toolbar.Children.Add(frequency);
         toolbar.Children.Add(Button("Run", (_, _) => RunSimulation()));
+        toolbar.Children.Add(Button("Live", (_, _) => ToggleLive()));
         DockPanel.SetDock(toolbar, Dock.Top);
         root.Children.Add(toolbar);
 
@@ -129,6 +135,113 @@ public sealed class WaveformWindow : Window
         {
             log.Text = ex.ToString();
         }
+    }
+
+    private void ToggleLive()
+    {
+        if (liveStream != null)
+        {
+            StopLive();
+            return;
+        }
+
+        try
+        {
+            Audio.Device device = SelectedDevice();
+            Audio.Channel[] input = SelectedChannels(device.InputChannels, settings.AudioInputs).ToArray();
+            Audio.Channel[] output = SelectedChannels(device.OutputChannels, settings.AudioOutputs).ToArray();
+            if (input.Length == 0 && device.InputChannels.Length > 0)
+                input = new[] { device.InputChannels[0] };
+            if (output.Length == 0 && device.OutputChannels.Length > 0)
+                output = new[] { device.OutputChannels[0] };
+
+            int oversampleValue = ParseInt(oversample.Text, 8, 1, 64);
+            int iterationValue = ParseInt(iterations.Text, 8, 1, 64);
+            lock (simulationLock)
+            {
+                liveSimulation = AudioSimulationFactory.Create(schematic.Build(), 48000, oversampleValue, iterationValue);
+            }
+
+            liveStream = device.Open(ProcessLiveSamples, input, output);
+            lock (simulationLock)
+            {
+                liveSimulation = AudioSimulationFactory.Create(schematic.Build(), liveStream.SampleRate, oversampleValue, iterationValue);
+            }
+            log.Text = $"Live stream started\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {device.Name}\nSample rate: {liveStream.SampleRate:0}";
+        }
+        catch (Exception ex)
+        {
+            StopLive();
+            log.Text = ex.ToString();
+        }
+    }
+
+    private void StopLive()
+    {
+        Audio.Stream? stream = liveStream;
+        liveStream = null;
+        if (stream != null)
+            stream.Stop();
+        lock (simulationLock)
+        {
+            liveSimulation = null;
+        }
+    }
+
+    private void ProcessLiveSamples(int count, Audio.SampleBuffer[] input, Audio.SampleBuffer[] output, double rate)
+    {
+        try
+        {
+            Simulation? simulation;
+            lock (simulationLock)
+                simulation = liveSimulation;
+
+            if (simulation == null)
+            {
+                foreach (Audio.SampleBuffer buffer in output)
+                    buffer.Clear();
+                return;
+            }
+
+            double inputScale = DbToLinear(inputGain.Value);
+            double outputScale = DbToLinear(outputGain.Value);
+            double[] inputSamples = new double[count];
+            if (input.Length > 0)
+                Array.Copy(input[0].Samples, inputSamples, count);
+            else
+                for (int sample = 0; sample < count; sample++)
+                    inputSamples[sample] = 0.25 * Math.Sin(2 * Math.PI * 440 * (simulation.Time + sample / rate));
+            for (int sample = 0; sample < count; sample++)
+                inputSamples[sample] *= inputScale;
+
+            double[] outputSamples = new double[count];
+            lock (simulationLock)
+                simulation.Run(count, new[] { inputSamples }, new[] { outputSamples });
+            for (int sample = 0; sample < count; sample++)
+                outputSamples[sample] *= outputScale;
+            foreach (Audio.SampleBuffer buffer in output)
+                Array.Copy(outputSamples, buffer.Samples, count);
+
+            Dispatcher.UIThread.Post(() => waveform.SetSamples(outputSamples, (int)rate));
+        }
+        catch (Exception ex)
+        {
+            foreach (Audio.SampleBuffer buffer in output)
+                buffer.Clear();
+            Dispatcher.UIThread.Post(() => log.Text = ex.ToString());
+        }
+    }
+
+    private Audio.Device SelectedDevice()
+    {
+        Audio.Driver driver = Audio.Driver.Drivers.FirstOrDefault(i => i.Name == settings.AudioDriver) ?? Audio.Driver.Drivers.First();
+        return driver.Devices.FirstOrDefault(i => i.Name == settings.AudioDevice) ?? driver.Devices.First();
+    }
+
+    private static System.Collections.Generic.IEnumerable<Audio.Channel> SelectedChannels(Audio.Channel[] channels, System.Collections.Generic.IEnumerable<string> names)
+    {
+        System.Collections.Generic.HashSet<string> selected = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return channels.Where(i => selected.Contains(i.Name));
     }
 
     private static TextBlock Header(string text)
