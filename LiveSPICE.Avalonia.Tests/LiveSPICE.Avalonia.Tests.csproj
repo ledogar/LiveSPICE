@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>LiveSPICE.Avalonia.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LiveSPICE.Avalonia\LiveSPICE.Avalonia.csproj" />
+    <ProjectReference Include="..\Circuit\Circuit.csproj" />
+  </ItemGroup>
+</Project>

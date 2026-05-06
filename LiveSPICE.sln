@@ -40,6 +40,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveSPICE.Headless", "LiveS
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveSPICE.Avalonia", "LiveSPICE.Avalonia\LiveSPICE.Avalonia.csproj", "{4AECCE30-DAC4-40A4-8D6C-841A5A4610C2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveSPICE.Avalonia.Tests", "LiveSPICE.Avalonia.Tests\LiveSPICE.Avalonia.Tests.csproj", "{632F80C2-2019-4EF9-902B-ADE2977CC281}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -106,6 +108,10 @@ Global
 		{4AECCE30-DAC4-40A4-8D6C-841A5A4610C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4AECCE30-DAC4-40A4-8D6C-841A5A4610C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4AECCE30-DAC4-40A4-8D6C-841A5A4610C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{632F80C2-2019-4EF9-902B-ADE2977CC281}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{632F80C2-2019-4EF9-902B-ADE2977CC281}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{632F80C2-2019-4EF9-902B-ADE2977CC281}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{632F80C2-2019-4EF9-902B-ADE2977CC281}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

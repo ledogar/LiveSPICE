@@ -453,6 +453,80 @@ public sealed class SchematicCanvas : Control
         wireStart = null;
     }
 
+    internal bool TestClick(Coord at, bool control = false)
+    {
+        Element? hit = HitTest(at);
+        if (hit == null)
+        {
+            if (!control)
+                ClearSelection();
+            return false;
+        }
+
+        if (control)
+        {
+            if (!selected.Add(hit))
+                selected.Remove(hit);
+            SelectionChanged?.Invoke();
+            InvalidateVisual();
+        }
+        else
+        {
+            SetSelection(hit);
+        }
+        return true;
+    }
+
+    internal void TestDragSelected(Coord from, Coord to)
+    {
+        if (selected.Count == 0)
+            TestClick(from);
+        if (selected.Count == 0)
+            return;
+
+        Element[] moved = selected.ToArray();
+        Coord delta = to - from;
+        if (delta == new Coord(0, 0))
+            return;
+
+        foreach (Element element in moved)
+            element.Move(delta);
+        document?.Record(new MoveElementsAction(moved, delta));
+        MarkChanged(false);
+    }
+
+    internal void TestDragSelect(Coord a, Coord b, bool control = false)
+    {
+        selectionBase = control ? selected.ToArray() : Array.Empty<Element>();
+        HighlightRect(a, b);
+        selectionBase = Array.Empty<Element>();
+        InvalidateVisual();
+    }
+
+    internal bool TestWireClick(Coord at)
+    {
+        if (schematic == null)
+            return false;
+
+        if (!wireStart.HasValue)
+        {
+            BeginWireTool();
+            wireStart = at;
+            return false;
+        }
+
+        if (wireStart.Value == at)
+            return false;
+
+        Wire wire = new Wire(wireStart.Value, at);
+        document?.Do(new AddElementsAction(schematic, new[] { wire }));
+        SetSelection(wire);
+        wireStart = null;
+        wireMode = false;
+        MarkChanged(false);
+        return true;
+    }
+
     public void DeleteSelection()
     {
         if (schematic == null || selected.Count == 0)
