@@ -51,6 +51,18 @@ public sealed class SimulationAndAudioTests
     }
 
     [Fact]
+    public void WaveformWindowDiscoversNodeProbeCandidates()
+    {
+        Circuit.Circuit circuit = Schematic.Load(FindFixture("Tests/Circuits/Passive 1stOrder Highpass RC.schx")).Build();
+
+        ProbeCandidate[] candidates = WaveformWindow.ProbeCandidates(circuit).ToArray();
+
+        Assert.NotEmpty(candidates);
+        Assert.DoesNotContain(candidates, i => string.IsNullOrWhiteSpace(i.Name) || i.Name == "0");
+        Assert.DoesNotContain(candidates, i => i.Expression.EqualsZero());
+    }
+
+    [Fact]
     public void VirtualAudioStreamInvokesCallbackUntilStopped()
     {
         VirtualAudioDriver driver = new VirtualAudioDriver();

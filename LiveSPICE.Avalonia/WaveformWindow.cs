@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Circuit;
+using ComputerAlgebra;
 using APoint = Avalonia.Point;
 
 namespace LiveSPICE.Avalonia;
@@ -21,6 +22,7 @@ public sealed class WaveformWindow : Window
     private readonly TextBox frequency = new TextBox { Text = "440", Width = 72 };
     private readonly Slider inputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
     private readonly Slider outputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
+    private readonly ListBox probeList = new ListBox { SelectionMode = SelectionMode.Multiple, MinHeight = 96, MaxHeight = 180 };
     private readonly TextBlock audioConfig = new TextBlock { TextWrapping = TextWrapping.Wrap };
     private readonly TextBox log = new TextBox { IsReadOnly = true, AcceptsReturn = true, MinHeight = 100, TextWrapping = TextWrapping.Wrap };
     private readonly LiveAudioProcessor liveProcessor;
@@ -89,6 +91,8 @@ public sealed class WaveformWindow : Window
         audio.Children.Add(new TextBlock { Text = "Generated sine" });
         audio.Children.Add(Header("Output"));
         audio.Children.Add(new TextBlock { Text = "First output channel" });
+        audio.Children.Add(Header("Probes"));
+        audio.Children.Add(probeList);
         Grid.SetColumn(audio, 0);
         Grid.SetRowSpan(audio, 2);
         main.Children.Add(audio);
@@ -118,28 +122,39 @@ public sealed class WaveformWindow : Window
             int sampleRate = 48000;
 
             Circuit.Circuit circuit = schematic.Build();
-            Simulation simulation = AudioSimulationFactory.Create(circuit, sampleRate, 1, oversampleValue);
-            simulation.Iterations = iterationValue;
+            RefreshProbeCandidates(circuit);
+            Expression inputExpression = circuit.Components.OfType<Input>().Select(i => i.In).SingleOrDefault()
+                ?? throw new NotSupportedException("Circuit has no inputs.");
+            Expression speakerOutput = SpeakerOutputExpression(circuit);
+            ProbeCandidate[] selectedProbes = SelectedProbeCandidates().ToArray();
+            Expression[] outputExpressions = new[] { speakerOutput }.Concat(selectedProbes.Select(i => i.Expression)).ToArray();
+            Simulation simulation = new Simulation(AudioSimulationFactory.Solve(circuit, sampleRate, oversampleValue))
+            {
+                Input = new[] { inputExpression },
+                Output = outputExpressions,
+                Oversample = oversampleValue,
+                Iterations = iterationValue,
+            };
 
             double inGain = DbToLinear(inputGain.Value);
             double outGain = DbToLinear(outputGain.Value);
             double[] input = new double[sampleCount];
-            string[] outputNames = settings.AudioOutputs.Count == 0 ? new[] { "Speaker output" } : settings.AudioOutputs.ToArray();
+            string[] outputNames = new[] { settings.AudioOutputs.Count == 0 ? "Speaker output" : string.Join(" + ", settings.AudioOutputs) }
+                .Concat(selectedProbes.Select(i => i.Name))
+                .ToArray();
             double[][] outputs = outputNames.Select(_ => new double[sampleCount]).ToArray();
             for (int i = 0; i < input.Length; i++)
                 input[i] = inGain * 0.25 * Math.Sin(2 * Math.PI * frequencyValue * i / sampleRate);
 
-            simulation.Run(input.Length, new[] { input }, new[] { outputs[0] });
+            simulation.Run(input.Length, new[] { input }, outputs);
             for (int channel = 0; channel < outputs.Length; channel++)
             {
-                if (channel > 0)
-                    Array.Copy(outputs[0], outputs[channel], outputs[0].Length);
                 for (int i = 0; i < outputs[channel].Length; i++)
                     outputs[channel][i] *= outGain;
             }
 
             waveform.SetTraces(outputNames.Zip(outputs, (name, data) => new WaveformTrace(name, data)), sampleRate);
-            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {outputs.SelectMany(i => i).Select(Math.Abs).DefaultIfEmpty().Max():R}";
+            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nProbes: {ChannelNames(selectedProbes.Select(i => i.Name).ToArray())}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {outputs.SelectMany(i => i).Select(Math.Abs).DefaultIfEmpty().Max():R}";
         }
         catch (Exception ex)
         {
@@ -282,6 +297,42 @@ public sealed class WaveformWindow : Window
     {
         return Math.Pow(10, db / 20);
     }
+
+    private void RefreshProbeCandidates(Circuit.Circuit circuit)
+    {
+        string[] selected = SelectedProbeCandidates().Select(i => i.Name).ToArray();
+        ProbeCandidate[] candidates = ProbeCandidates(circuit).ToArray();
+        probeList.ItemsSource = candidates;
+        if (probeList.SelectedItems == null)
+            return;
+
+        probeList.SelectedItems.Clear();
+        foreach (ProbeCandidate candidate in candidates.Where(i => selected.Contains(i.Name, StringComparer.OrdinalIgnoreCase)))
+            probeList.SelectedItems.Add(candidate);
+    }
+
+    private System.Collections.Generic.IEnumerable<ProbeCandidate> SelectedProbeCandidates()
+    {
+        return probeList.SelectedItems?.OfType<ProbeCandidate>() ?? Enumerable.Empty<ProbeCandidate>();
+    }
+
+    internal static System.Collections.Generic.IEnumerable<ProbeCandidate> ProbeCandidates(Circuit.Circuit circuit)
+    {
+        return circuit.Nodes
+            .Where(i => !string.IsNullOrWhiteSpace(i.Name) && i.Name != "0")
+            .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(i => new ProbeCandidate(i.Name, i.V));
+    }
+
+    private static Expression SpeakerOutputExpression(Circuit.Circuit circuit)
+    {
+        Expression expression = 0;
+        foreach (Speaker speaker in circuit.Components.OfType<Speaker>())
+            expression += speaker.Out;
+        if (expression.EqualsZero())
+            throw new NotSupportedException("Circuit has no speaker outputs.");
+        return expression;
+    }
 }
 
 public sealed class WaveformView : Control
@@ -353,3 +404,11 @@ public sealed class WaveformView : Control
 }
 
 public sealed record WaveformTrace(string Name, double[] Samples);
+
+public sealed record ProbeCandidate(string Name, Expression Expression)
+{
+    public override string ToString()
+    {
+        return Name;
+    }
+}
