@@ -246,7 +246,20 @@ public sealed class SchematicCanvas : Control
         };
         FormattedText formatted = new FormattedText(text.String, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextTypeface, size * Zoom, Brushes.Black);
         APoint point = ToScreen(transform.Apply(text.x));
-        context.DrawText(formatted, point);
+        double x = point.X - formatted.Width * AlignmentFactor(text.HorizontalAlign);
+        double y = point.Y - formatted.Height * AlignmentFactor(text.VerticalAlign);
+        context.DrawText(formatted, new APoint(x, y));
+    }
+
+    private static double AlignmentFactor(Alignment alignment)
+    {
+        return alignment switch
+        {
+            Alignment.Near => 0,
+            Alignment.Center => 0.5,
+            Alignment.Far => 1,
+            _ => 0
+        };
     }
 
     private void DrawTerminal(DrawingContext context, APoint point, IBrush brush)
@@ -527,6 +540,11 @@ public sealed class SchematicCanvas : Control
         return true;
     }
 
+    internal static Coord TestTransformPoint(Symbol symbol, Circuit.Point point)
+    {
+        return (Coord)Circuit.Point.Round(new Transform(symbol, symbol.Component.LayoutSymbol()).Apply(point));
+    }
+
     public void DeleteSelection()
     {
         if (schematic == null || selected.Count == 0)
@@ -690,9 +708,8 @@ public sealed class SchematicCanvas : Control
 
         public Circuit.Point Apply(Circuit.Point local)
         {
-            Circuit.Coord offset = (layout.LowerBound + layout.UpperBound) / 2;
-            double x = local.x - offset.x;
-            double y = local.y - offset.y;
+            double x = local.x;
+            double y = local.y;
             if (!symbol.Flip)
                 y = -y;
 

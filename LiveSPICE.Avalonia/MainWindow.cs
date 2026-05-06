@@ -306,8 +306,24 @@ public sealed class MainWindow : Window
             }
         });
 
-        foreach (string path in files.Select(i => i.TryGetLocalPath()).Where(i => i != null).Cast<string>())
+        foreach (string path in files.Select(OpenPath).Where(i => i != null).Cast<string>())
             LoadSchematic(path);
+    }
+
+    internal static string? OpenPath(IStorageFile file)
+    {
+        return OpenPath(file.TryGetLocalPath(), file.Path);
+    }
+
+    internal static string? OpenPath(string? localPath, Uri uri)
+    {
+        if (!string.IsNullOrWhiteSpace(localPath))
+            return localPath;
+
+        if (uri.IsFile)
+            return uri.LocalPath;
+
+        return null;
     }
 
     private void LoadSchematic(string path)
