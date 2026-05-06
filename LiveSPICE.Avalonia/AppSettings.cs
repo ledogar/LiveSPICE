@@ -35,10 +35,15 @@ public sealed class AppSettings
 
     public static AppSettings Load()
     {
+        return Load(SettingsPath);
+    }
+
+    internal static AppSettings Load(string path)
+    {
         try
         {
-            if (File.Exists(SettingsPath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)) ?? new AppSettings();
+            if (File.Exists(path))
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
         }
         catch
         {
@@ -49,8 +54,13 @@ public sealed class AppSettings
 
     public void Save()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath) ?? ".");
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, Options));
+        Save(SettingsPath);
+    }
+
+    internal void Save(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+        File.WriteAllText(path, JsonSerializer.Serialize(this, Options));
     }
 
     public void MarkUsed(string path)

@@ -340,6 +340,7 @@ public sealed class MainWindow : Window
                     return;
                 }
 
+                ReplaceUntouchedStartupDocument();
                 AddDocument(SchematicDocument.Open(path));
                 settings.MarkUsed(path);
                 RefreshRecentFilesMenu();
@@ -349,6 +350,20 @@ public sealed class MainWindow : Window
         {
             status.Text = ex.Message;
         }
+    }
+
+    private void ReplaceUntouchedStartupDocument()
+    {
+        if (documents.Items.Count != 1)
+            return;
+
+        if (documents.Items[0] is TabItem { Tag: SchematicDocument document } tab && IsUntouchedStartupDocument(document))
+            documents.Items.Remove(tab);
+    }
+
+    internal static bool IsUntouchedStartupDocument(SchematicDocument document)
+    {
+        return document.FilePath == null && !document.Dirty && !document.Schematic.Elements.Any();
     }
 
         private void NewDocument()

@@ -16,4 +16,19 @@ public sealed class MenuOpenPathTests
     {
         Assert.Equal("/chosen/MXR Phase 90.schx", MainWindow.OpenPath("/chosen/MXR Phase 90.schx", new Uri("file:///tmp/MXR%20Phase%2090.schx")));
     }
+
+    [Fact]
+    public void UntouchedStartupDocumentCanBeReplacedByFirstOpen()
+    {
+        Assert.True(MainWindow.IsUntouchedStartupDocument(SchematicDocument.New()));
+    }
+
+    [Fact]
+    public void DirtyStartupDocumentIsNotReplacedByFirstOpen()
+    {
+        SchematicDocument document = SchematicDocument.New();
+        document.MarkDirty();
+
+        Assert.False(MainWindow.IsUntouchedStartupDocument(document));
+    }
 }
