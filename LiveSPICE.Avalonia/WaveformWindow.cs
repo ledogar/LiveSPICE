@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Circuit;
 using ComputerAlgebra;
+using ComputerAlgebra.LinqCompiler;
 using APoint = Avalonia.Point;
 
 namespace LiveSPICE.Avalonia;
@@ -20,6 +21,7 @@ public sealed class WaveformWindow : Window
     private readonly TextBox iterations = new TextBox { Text = "8", Width = 52 };
     private readonly TextBox samples = new TextBox { Text = "4096", Width = 72 };
     private readonly TextBox frequency = new TextBox { Text = "440", Width = 72 };
+    private readonly TextBox inputExpression = new TextBox { Watermark = "Optional expression in t", MinWidth = 160 };
     private readonly Slider inputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
     private readonly Slider outputGain = new Slider { Minimum = -40, Maximum = 40, Value = 0, Width = 160 };
     private readonly ListBox probeList = new ListBox { SelectionMode = SelectionMode.Multiple, MinHeight = 96, MaxHeight = 180 };
@@ -65,6 +67,8 @@ public sealed class WaveformWindow : Window
         toolbar.Children.Add(samples);
         toolbar.Children.Add(Label("Hz"));
         toolbar.Children.Add(frequency);
+        toolbar.Children.Add(Label("Input"));
+        toolbar.Children.Add(inputExpression);
         toolbar.Children.Add(Button("Run", (_, _) => RunSimulation()));
         toolbar.Children.Add(Button("Live", (_, _) => ToggleLive()));
         DockPanel.SetDock(toolbar, Dock.Top);
@@ -143,8 +147,7 @@ public sealed class WaveformWindow : Window
                 .Concat(selectedProbes.Select(i => i.Name))
                 .ToArray();
             double[][] outputs = outputNames.Select(_ => new double[sampleCount]).ToArray();
-            for (int i = 0; i < input.Length; i++)
-                input[i] = inGain * 0.25 * Math.Sin(2 * Math.PI * frequencyValue * i / sampleRate);
+            FillInputBuffer(input, sampleRate, frequencyValue, inGain);
 
             simulation.Run(input.Length, new[] { input }, outputs);
             for (int channel = 0; channel < outputs.Length; channel++)
@@ -154,7 +157,7 @@ public sealed class WaveformWindow : Window
             }
 
             waveform.SetTraces(outputNames.Zip(outputs, (name, data) => new WaveformTrace(name, data)), sampleRate);
-            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nProbes: {ChannelNames(selectedProbes.Select(i => i.Name).ToArray())}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {outputs.SelectMany(i => i).Select(Math.Abs).DefaultIfEmpty().Max():R}";
+            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nProbes: {ChannelNames(selectedProbes.Select(i => i.Name).ToArray())}\nInput signal: {InputDescription(frequencyValue)}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nPeak: {outputs.SelectMany(i => i).Select(Math.Abs).DefaultIfEmpty().Max():R}";
         }
         catch (Exception ex)
         {
@@ -296,6 +299,36 @@ public sealed class WaveformWindow : Window
     private static double DbToLinear(double db)
     {
         return Math.Pow(10, db / 20);
+    }
+
+    private void FillInputBuffer(double[] input, int sampleRate, double frequencyValue, double gain)
+    {
+        FillInputBuffer(input, sampleRate, frequencyValue, gain, inputExpression.Text);
+    }
+
+    internal static void FillInputBuffer(double[] input, int sampleRate, double frequencyValue, double gain, string? expressionText)
+    {
+        Func<double, double>? signal = CompileInputExpression(expressionText);
+        for (int i = 0; i < input.Length; i++)
+        {
+            double time = i / (double)sampleRate;
+            double value = signal == null ? 0.25 * Math.Sin(2 * Math.PI * frequencyValue * time) : signal(time);
+            input[i] = gain * value;
+        }
+    }
+
+    private static Func<double, double>? CompileInputExpression(string? expressionText)
+    {
+        if (string.IsNullOrWhiteSpace(expressionText))
+            return null;
+
+        Expression expression = Expression.Parse(expressionText);
+        return expression.Compile<Func<double, double>>(Circuit.Component.t);
+    }
+
+    private string InputDescription(double frequencyValue)
+    {
+        return string.IsNullOrWhiteSpace(inputExpression.Text) ? $"Generated sine {frequencyValue} Hz" : inputExpression.Text;
     }
 
     private void RefreshProbeCandidates(Circuit.Circuit circuit)

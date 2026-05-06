@@ -63,6 +63,26 @@ public sealed class SimulationAndAudioTests
     }
 
     [Fact]
+    public void WaveformWindowGeneratesFallbackSineInput()
+    {
+        double[] input = new double[32];
+
+        WaveformWindow.FillInputBuffer(input, 48000, 440, 1, null);
+
+        Assert.Contains(input, i => Math.Abs(i) > 1e-9);
+    }
+
+    [Fact]
+    public void WaveformWindowGeneratesExpressionInput()
+    {
+        double[] input = new double[8];
+
+        WaveformWindow.FillInputBuffer(input, 48000, 440, 2, "0.125");
+
+        Assert.All(input, i => Assert.Equal(0.25, i, 12));
+    }
+
+    [Fact]
     public void VirtualAudioStreamInvokesCallbackUntilStopped()
     {
         VirtualAudioDriver driver = new VirtualAudioDriver();
