@@ -1,4 +1,6 @@
 using AudioPlugSharp;
+using System.IO;
+using LiveSPICE.Avalonia;
 using LiveSPICE.PluginCore;
 using LiveSPICE.PluginLinux;
 using Xunit;
@@ -51,5 +53,17 @@ public class PluginPortTests
 
         Assert.Equal(8, restored.SimulationProcessor.Oversample);
         Assert.Equal(32, restored.SimulationProcessor.Iterations);
+    }
+
+    [Fact]
+    public void PluginEditorCreatesOverlayControlsForInteractiveSchematic()
+    {
+        SimulationProcessor processor = new SimulationProcessor();
+        string schematicPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../Tests/Circuits/59 Bassman Preamp.schx"));
+        processor.LoadSchematic(schematicPath);
+
+        Assert.NotEmpty(processor.InteractiveComponents);
+        Assert.All(processor.InteractiveComponents, wrapper =>
+            Assert.Contains(processor.Schematic!.Symbols, symbol => PluginEditorWindow.WrapperMatchesSymbol(wrapper, symbol)));
     }
 }

@@ -279,6 +279,11 @@ public sealed class SchematicCanvas : Control
         return new APoint(point.x * Zoom + pan.X, point.y * Zoom + pan.Y);
     }
 
+    internal APoint SchematicToScreen(Circuit.Point point)
+    {
+        return ToScreen(point);
+    }
+
     private Coord ToSchematic(APoint point)
     {
         return Snap(new Coord((int)Math.Round((point.X - pan.X) / Zoom), (int)Math.Round((point.Y - pan.Y) / Zoom)));
