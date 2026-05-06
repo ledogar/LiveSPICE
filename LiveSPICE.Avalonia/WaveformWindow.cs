@@ -120,16 +120,22 @@ public sealed class WaveformWindow : Window
             double inGain = DbToLinear(inputGain.Value);
             double outGain = DbToLinear(outputGain.Value);
             double[] input = new double[sampleCount];
-            double[] output = new double[sampleCount];
+            string[] outputNames = settings.AudioOutputs.Count == 0 ? new[] { "Speaker output" } : settings.AudioOutputs.ToArray();
+            double[][] outputs = outputNames.Select(_ => new double[sampleCount]).ToArray();
             for (int i = 0; i < input.Length; i++)
                 input[i] = inGain * 0.25 * Math.Sin(2 * Math.PI * frequencyValue * i / sampleRate);
 
-            simulation.Run(input.Length, new[] { input }, new[] { output });
-            for (int i = 0; i < output.Length; i++)
-                output[i] *= outGain;
+            simulation.Run(input.Length, new[] { input }, new[] { outputs[0] });
+            for (int channel = 0; channel < outputs.Length; channel++)
+            {
+                if (channel > 0)
+                    Array.Copy(outputs[0], outputs[channel], outputs[0].Length);
+                for (int i = 0; i < outputs[channel].Length; i++)
+                    outputs[channel][i] *= outGain;
+            }
 
-            waveform.SetSamples(output, sampleRate);
-            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {output.Select(Math.Abs).DefaultIfEmpty().Max():R}";
+            waveform.SetTraces(outputNames.Zip(outputs, (name, data) => new WaveformTrace(name, data)), sampleRate);
+            log.Text = $"Build succeeded\nAudio driver: {AudioName(settings.AudioDriver)}\nDevice: {AudioName(settings.AudioDevice)}\nInputs: {ChannelNames(settings.AudioInputs)}\nOutputs: {ChannelNames(settings.AudioOutputs)}\nSample rate: {sampleRate}\nOversample: {oversampleValue}\nIterations: {iterationValue}\nSamples: {sampleCount}\nFrequency: {frequencyValue}\nPeak: {outputs.SelectMany(i => i).Select(Math.Abs).DefaultIfEmpty().Max():R}";
         }
         catch (Exception ex)
         {
@@ -295,12 +301,18 @@ public sealed class WaveformWindow : Window
 public sealed class WaveformView : Control
 {
     private static readonly Typeface TextTypeface = new Typeface("Inter");
-    private double[] samples = Array.Empty<double>();
+    private static readonly IBrush[] TraceBrushes = { Brushes.DodgerBlue, Brushes.OrangeRed, Brushes.SeaGreen, Brushes.MediumPurple };
+    private WaveformTrace[] traces = Array.Empty<WaveformTrace>();
     private int sampleRate = 48000;
 
     public void SetSamples(double[] value, int rate)
     {
-        samples = value;
+        SetTraces(new[] { new WaveformTrace("Output", value) }, rate);
+    }
+
+    public void SetTraces(System.Collections.Generic.IEnumerable<WaveformTrace> value, int rate)
+    {
+        traces = value.ToArray();
         sampleRate = rate;
         InvalidateVisual();
     }
@@ -312,35 +324,46 @@ public sealed class WaveformView : Control
         context.DrawRectangle(null, new Pen(Brushes.LightGray, 1), plot);
         context.DrawLine(new Pen(Brushes.Gray, 1), new APoint(plot.Left, plot.Center.Y), new APoint(plot.Right, plot.Center.Y));
 
-        if (samples.Length == 0)
+        if (traces.Length == 0 || traces.All(i => i.Samples.Length == 0))
             return;
 
-        double peak = Math.Max(samples.Select(Math.Abs).DefaultIfEmpty().Max(), 1e-9);
-        Pen waveform = new Pen(Brushes.DodgerBlue, 1.4);
-        APoint previous = SamplePoint(0, peak, plot);
-        for (int i = 1; i < samples.Length; i++)
+        double peak = Math.Max(traces.SelectMany(i => i.Samples).Select(Math.Abs).DefaultIfEmpty().Max(), 1e-9);
+        int maxSamples = traces.Max(i => i.Samples.Length);
+        for (int traceIndex = 0; traceIndex < traces.Length; traceIndex++)
         {
-            APoint next = SamplePoint(i, peak, plot);
-            context.DrawLine(waveform, previous, next);
-            previous = next;
+            double[] samples = traces[traceIndex].Samples;
+            if (samples.Length == 0)
+                continue;
+
+            Pen waveform = new Pen(TraceBrushes[traceIndex % TraceBrushes.Length], 1.4);
+            APoint previous = SamplePoint(samples, 0, peak, plot);
+            for (int i = 1; i < samples.Length; i++)
+            {
+                APoint next = SamplePoint(samples, i, peak, plot);
+                context.DrawLine(waveform, previous, next);
+                previous = next;
+            }
+            DrawText(context, traces[traceIndex].Name, new APoint(plot.Right - 130, plot.Top + traceIndex * 16), TraceBrushes[traceIndex % TraceBrushes.Length]);
         }
 
-        DrawText(context, $"{samples.Length / (double)sampleRate:0.000}s  peak {peak:0.000000}", new APoint(48, 6));
-        DrawText(context, "+peak", new APoint(6, plot.Top));
-        DrawText(context, "0", new APoint(24, plot.Center.Y - 8));
-        DrawText(context, "-peak", new APoint(6, plot.Bottom - 16));
+        DrawText(context, $"{maxSamples / (double)sampleRate:0.000}s  peak {peak:0.000000}", new APoint(48, 6), Brushes.DimGray);
+        DrawText(context, "+peak", new APoint(6, plot.Top), Brushes.DimGray);
+        DrawText(context, "0", new APoint(24, plot.Center.Y - 8), Brushes.DimGray);
+        DrawText(context, "-peak", new APoint(6, plot.Bottom - 16), Brushes.DimGray);
     }
 
-    private APoint SamplePoint(int index, double peak, Rect plot)
+    private static APoint SamplePoint(double[] samples, int index, double peak, Rect plot)
     {
         double x = plot.Left + (samples.Length == 1 ? 0 : index * plot.Width / (samples.Length - 1));
         double y = plot.Center.Y - samples[index] / peak * plot.Height / 2;
         return new APoint(x, y);
     }
 
-    private static void DrawText(DrawingContext context, string text, APoint point)
+    private static void DrawText(DrawingContext context, string text, APoint point, IBrush brush)
     {
-        FormattedText formatted = new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextTypeface, 12, Brushes.DimGray);
+        FormattedText formatted = new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextTypeface, 12, brush);
         context.DrawText(formatted, point);
     }
 }
+
+public sealed record WaveformTrace(string Name, double[] Samples);
