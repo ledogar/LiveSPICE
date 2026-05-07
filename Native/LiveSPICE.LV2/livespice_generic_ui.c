@@ -335,7 +335,7 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_fill(cr);
     cairo_pattern_destroy(cap);
 
-    double angle = (-135.0 + (270.0 * value)) * G_PI / 180.0;
+    double angle = (-90.0 + (270.0 * value)) * G_PI / 180.0;
     double indicator_inner = radius * 0.18;
     double indicator_outer = radius * 0.78;
     cairo_set_source_rgb(cr, 0.02, 0.02, 0.02);
