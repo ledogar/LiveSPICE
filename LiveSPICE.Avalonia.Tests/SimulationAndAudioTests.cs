@@ -150,6 +150,84 @@ public sealed class SimulationAndAudioTests
         Assert.Contains(output.Samples, i => Math.Abs(i) > 1e-12);
     }
 
+    [Fact]
+    public void LinuxJackLiveModeProcessesBuiltInMicrophoneThroughRcFilter()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("LIVESPICE_RUN_JACK_HARDWARE_TEST"), "1", StringComparison.Ordinal))
+            return;
+
+        LinuxAudioDriver driver = new LinuxAudioDriver();
+        Audio.Device? device = driver.Devices.SingleOrDefault();
+        Assert.NotNull(device);
+
+        Audio.Channel? microphone = BuiltIn(device!.InputChannels, ":capture_FL") ?? BuiltIn(device.InputChannels, ":capture_");
+        Audio.Channel? playback = BuiltIn(device.OutputChannels, ":playback_FL") ?? BuiltIn(device.OutputChannels, ":playback_");
+        Assert.NotNull(microphone);
+        Assert.NotNull(playback);
+
+        Schematic schematic = Schematic.Load(FindFixture("Tests/Circuits/Passive 1stOrder Highpass RC.schx"));
+        LiveAudioProcessor liveProcessor = new LiveAudioProcessor(schematic);
+        List<double[]> capturedInputs = new List<double[]>();
+        List<double[]> capturedOutputs = new List<double[]>();
+        using ManualResetEventSlim completed = new ManualResetEventSlim(false);
+        int callbackCount = 0;
+
+        Audio.Stream stream = device.Open((count, input, output, rate) =>
+        {
+            if (callbackCount == 0)
+                liveProcessor.Start(rate, 4, 8);
+
+            double[] inputCopy = input.Length == 0 ? new double[count] : input[0].Samples.Take(count).ToArray();
+            liveProcessor.Process(count, input, output, rate);
+            double[] outputCopy = output.Length == 0 ? new double[count] : output[0].Samples.Take(count).ToArray();
+
+            lock (capturedInputs)
+            {
+                capturedInputs.Add(inputCopy);
+                capturedOutputs.Add(outputCopy);
+                callbackCount++;
+                if (callbackCount >= 8)
+                    completed.Set();
+            }
+        }, new[] { microphone! }, new[] { playback! });
+
+        try
+        {
+            Assert.True(completed.Wait(TimeSpan.FromSeconds(4)), "Timed out waiting for PipeWire/JACK live audio callbacks.");
+        }
+        finally
+        {
+            stream.Stop();
+            liveProcessor.Stop();
+        }
+
+        LiveAudioProcessor referenceProcessor = new LiveAudioProcessor(schematic);
+        referenceProcessor.Start(stream.SampleRate, 4, 8);
+        for (int block = 0; block < capturedInputs.Count; block++)
+        {
+            using Audio.SampleBuffer input = Buffer(capturedInputs[block]);
+            using Audio.SampleBuffer output = new Audio.SampleBuffer(capturedInputs[block].Length);
+            double[] expected = referenceProcessor.Process(capturedInputs[block].Length, new[] { input }, new[] { output }, stream.SampleRate);
+
+            Assert.Equal(expected.Length, capturedOutputs[block].Length);
+            for (int sample = 0; sample < expected.Length; sample++)
+                Assert.Equal(expected[sample], capturedOutputs[block][sample], 12);
+        }
+        referenceProcessor.Stop();
+    }
+
+    private static Audio.Channel? BuiltIn(IEnumerable<Audio.Channel> channels, string suffix)
+    {
+        return channels.FirstOrDefault(i => i.Name.Contains("Built-in Audio", StringComparison.OrdinalIgnoreCase) && i.Name.Contains(suffix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Audio.SampleBuffer Buffer(double[] samples)
+    {
+        Audio.SampleBuffer buffer = new Audio.SampleBuffer(samples.Length);
+        Array.Copy(samples, buffer.Samples, samples.Length);
+        return buffer;
+    }
+
     private static string FindFixture(string relativePath)
     {
         DirectoryInfo? directory = new DirectoryInfo(AppContext.BaseDirectory);
