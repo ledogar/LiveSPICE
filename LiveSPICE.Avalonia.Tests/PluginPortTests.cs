@@ -1,5 +1,6 @@
 using AudioPlugSharp;
 using System.IO;
+using Avalonia.Threading;
 using LiveSPICE.Avalonia;
 using LiveSPICE.PluginCore;
 using LiveSPICE.PluginLinux;
@@ -32,18 +33,24 @@ public class PluginPortTests
     {
         EnsureAvalonia();
         LiveSPICELinuxPlugin plugin = new LiveSPICELinuxPlugin();
-        PluginEditorWindow editor = plugin.CreateEditorWindow();
+        PluginEditorWindow editor = RunOnUiThread(plugin.CreateEditorWindow);
+        try
+        {
+            Assert.Equal("Load Schematic", editor.TestLoadedText);
+            Assert.Equal(0, editor.TestControlPanelCount);
+            Assert.Equal(0, editor.TestOverlayControlCount);
 
-        Assert.Equal("Load Schematic", editor.TestLoadedText);
-        Assert.Equal(0, editor.TestControlPanelCount);
-        Assert.Equal(0, editor.TestOverlayControlCount);
+            plugin.LoadSchematic(FindFixture("Tests/Circuits/59 Bassman Preamp.schx"));
+            editor.LoadSchematic(plugin.SchematicPath);
 
-        plugin.LoadSchematic(FindFixture("Tests/Circuits/59 Bassman Preamp.schx"));
-        editor.LoadSchematic(plugin.SchematicPath);
-
-        Assert.Equal(plugin.SimulationProcessor.SchematicName, editor.TestLoadedText);
-        Assert.Equal(plugin.SimulationProcessor.InteractiveComponents.Count, editor.TestControlPanelCount);
-        Assert.Equal(plugin.SimulationProcessor.InteractiveComponents.Count, editor.TestOverlayControlCount);
+            Assert.Equal(plugin.SimulationProcessor.SchematicName, editor.TestLoadedText);
+            Assert.Equal(plugin.SimulationProcessor.InteractiveComponents.Count, editor.TestControlPanelCount);
+            Assert.Equal(plugin.SimulationProcessor.InteractiveComponents.Count, editor.TestOverlayControlCount);
+        }
+        finally
+        {
+            CloseOnUiThread(editor);
+        }
     }
 
     [Fact]
@@ -51,13 +58,19 @@ public class PluginPortTests
     {
         EnsureAvalonia();
         SimulationProcessor processor = new SimulationProcessor();
-        PluginEditorWindow editor = new PluginEditorWindow(processor);
+        PluginEditorWindow editor = RunOnUiThread(() => new PluginEditorWindow(processor));
+        try
+        {
+            editor.TestSelectedOversample = 8;
+            editor.TestSelectedIterations = 32;
 
-        editor.TestSelectedOversample = 8;
-        editor.TestSelectedIterations = 32;
-
-        Assert.Equal(8, processor.Oversample);
-        Assert.Equal(32, processor.Iterations);
+            Assert.Equal(8, processor.Oversample);
+            Assert.Equal(32, processor.Iterations);
+        }
+        finally
+        {
+            CloseOnUiThread(editor);
+        }
     }
 
     [Fact]
@@ -141,6 +154,42 @@ public class PluginPortTests
         Assert.DoesNotContain(output[0], double.IsNaN);
     }
 
+    [Fact]
+    public void PluginLoadsMxrPhase90WithControlsAndProducesStableAudio()
+    {
+        EnsureAvalonia();
+        LiveSPICELinuxPlugin plugin = new LiveSPICELinuxPlugin();
+        string schematicPath = FindFixture("Tests/Examples/MXR Phase 90.schx");
+        plugin.LoadSchematic(schematicPath);
+
+        PotWrapper[] pots = plugin.SimulationProcessor.InteractiveComponents.OfType<PotWrapper>().ToArray();
+        Assert.Equal(new[] { "Speed", "Trimmer" }, pots.Select(i => i.Name).OrderBy(i => i).ToArray());
+
+        PluginEditorWindow editor = RunOnUiThread(plugin.CreateEditorWindow);
+        try
+        {
+            editor.LoadSchematic(schematicPath);
+            Assert.Equal("MXR Phase 90", editor.TestLoadedText);
+            Assert.Equal(2, editor.TestControlPanelCount);
+            Assert.Equal(2, editor.TestOverlayControlCount);
+        }
+        finally
+        {
+            CloseOnUiThread(editor);
+        }
+
+        double[][] input = new[] { Enumerable.Range(0, 1024).Select(i => 0.1 * Math.Sin(2 * Math.PI * 220 * i / 48000)).ToArray() };
+        double[][] output = new[] { new double[1024] };
+        plugin.SimulationProcessor.SampleRate = 48000;
+        plugin.SimulationProcessor.Oversample = 4;
+        plugin.SimulationProcessor.Iterations = 8;
+
+        RunUntilReady(plugin.SimulationProcessor, input, output, output[0].Length);
+
+        Assert.Contains(output[0], i => Math.Abs(i) > 1e-9);
+        Assert.DoesNotContain(output[0], double.IsNaN);
+    }
+
     private static void RunUntilReady(SimulationProcessor processor, double[][] input, double[][] output, int length)
     {
         Exception? lastException = null;
@@ -218,6 +267,21 @@ public class PluginPortTests
 
         Program.BuildAvaloniaApp().SetupWithoutStarting();
         avaloniaInitialized = true;
+    }
+
+    private static T RunOnUiThread<T>(Func<T> action)
+    {
+        return Dispatcher.UIThread.CheckAccess()
+            ? action()
+            : Dispatcher.UIThread.Invoke(action);
+    }
+
+    private static void CloseOnUiThread(PluginEditorWindow editor)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            editor.Close();
+        else
+            Dispatcher.UIThread.Invoke(editor.Close);
     }
 
     private static string FindFixture(string relativePath)
