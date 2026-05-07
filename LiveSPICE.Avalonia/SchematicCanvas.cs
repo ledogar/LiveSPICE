@@ -245,10 +245,32 @@ public sealed class SchematicCanvas : Control
             _ => 10
         };
         FormattedText formatted = new FormattedText(text.String, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextTypeface, size * Zoom, Brushes.Black);
+        context.DrawText(formatted, TextOrigin(transform, text, formatted.Width, formatted.Height));
+    }
+
+    private APoint TextOrigin(Transform transform, SymbolLayout.Text text, double width, double height)
+    {
         APoint point = ToScreen(transform.Apply(text.x));
-        double x = point.X - formatted.Width * AlignmentFactor(text.HorizontalAlign);
-        double y = point.Y - formatted.Height * AlignmentFactor(text.VerticalAlign);
-        context.DrawText(formatted, new APoint(x, y));
+        AVector p1 = TextOffset(transform, text.x, new Circuit.Point(
+            text.x.x - AlignmentFactor(text.HorizontalAlign),
+            text.x.y + (1 - AlignmentFactor(text.VerticalAlign))));
+        AVector p2 = TextOffset(transform, text.x, new Circuit.Point(
+            text.x.x - (1 - AlignmentFactor(text.HorizontalAlign)),
+            text.x.y + AlignmentFactor(text.VerticalAlign)));
+
+        p1 = new AVector(p1.X * width, p1.Y * height);
+        p2 = new AVector(p2.X * width, p2.Y * height);
+
+        return new APoint(
+            Math.Min(point.X + p1.X, point.X - p2.X),
+            Math.Min(point.Y + p1.Y, point.Y - p2.Y));
+    }
+
+    private static AVector TextOffset(Transform transform, Circuit.Point origin, Circuit.Point target)
+    {
+        Circuit.Point transformedOrigin = transform.Apply(origin);
+        Circuit.Point transformedTarget = transform.Apply(target);
+        return new AVector(transformedTarget.x - transformedOrigin.x, transformedTarget.y - transformedOrigin.y);
     }
 
     private static double AlignmentFactor(Alignment alignment)

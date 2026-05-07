@@ -352,7 +352,7 @@ static void request_ui_size(LiveSpiceGenericUi* self)
         return;
 
     const int base_width = 470;
-    const int control_width = 96;
+    const int control_width = 108;
     const int max_width = 920;
     int width = base_width + (self->control_count * control_width);
     if (width < base_width)
@@ -382,7 +382,7 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
 
     double size = allocation.width < allocation.height ? allocation.width : allocation.height;
     double center = size / 2.0;
-    double radius = (size / 2.0) - 5.0;
+    double radius = (size / 2.0) - 9.0;
     double value = clamp_unit(knob->value);
 
     const double label_values[] = { 0, 0.25, 0.5, 0.75, 1 };
@@ -450,11 +450,11 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
         const char* label = knob_scale_label(knob->scale, i);
         cairo_text_extents_t extents;
         cairo_text_extents(cr, label, &extents);
-        double label_radius = radius + 11.2;
+        double label_radius = radius + 13.4;
         double label_x = center + cos(tick_angle) * label_radius - (extents.width / 2.0) - extents.x_bearing;
         double label_y = center + sin(tick_angle) * label_radius + (extents.height / 2.0);
         if (i == 2)
-            label_y = 2.0 + extents.height;
+            label_y = 1.0 - extents.y_bearing;
 
         cairo_set_source_rgba(cr, 1, 1, 1, 0.78);
         cairo_move_to(cr, label_x + 1, label_y + 1);
@@ -525,7 +525,7 @@ static GtkWidget* create_knob(double value, const char* name)
     knob->value = clamp_unit(value);
     knob->scale = classify_knob_scale(name);
     knob->area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(knob->area, 88, 88);
+    gtk_widget_set_size_request(knob->area, 100, 100);
     gtk_widget_add_events(knob->area, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK);
     g_signal_connect(knob->area, "draw", G_CALLBACK(draw_knob), knob);
     g_signal_connect(knob->area, "button-press-event", G_CALLBACK(knob_button_press), knob);
