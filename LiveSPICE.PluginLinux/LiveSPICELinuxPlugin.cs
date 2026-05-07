@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Xml.Serialization;
 using AudioPlugSharp;
 using LiveSPICE.Avalonia;
@@ -27,6 +28,7 @@ public class LiveSPICELinuxPlugin : AudioPluginBase
         EditorWidth = 700;
         EditorHeight = 420;
         SimulationProcessor = new SimulationProcessor();
+        LoadDefaultSchematic();
     }
 
     public SimulationProcessor SimulationProcessor { get; }
@@ -55,6 +57,28 @@ public class LiveSPICELinuxPlugin : AudioPluginBase
     {
         haveSimulationError = false;
         SimulationProcessor.LoadSchematic(path);
+    }
+
+    private void LoadDefaultSchematic()
+    {
+        Assembly assembly = typeof(LiveSPICELinuxPlugin).Assembly;
+        string? resourceName = assembly.GetManifestResourceNames().SingleOrDefault(i => i == "LiveSPICE.PluginLinux.DefaultSchematic.schx");
+        if (resourceName == null)
+            return;
+
+        string defaultSchematicPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "LiveSPICE",
+            "PluginLinux",
+            "DefaultSchematic.schx");
+        Directory.CreateDirectory(Path.GetDirectoryName(defaultSchematicPath)!);
+
+        using Stream resource = assembly.GetManifestResourceStream(resourceName)!;
+        using FileStream file = File.Create(defaultSchematicPath);
+        resource.CopyTo(file);
+        file.Close();
+
+        LoadSchematic(defaultSchematicPath);
     }
 
     public override byte[] SaveState()

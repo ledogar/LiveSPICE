@@ -14,4 +14,7 @@
   <ItemGroup>
     <PackageReference Include="AudioPlugSharp" Version="0.6.10" />
   </ItemGroup>
+  <ItemGroup Condition="'$(DefaultSchematic)' != ''">
+    <EmbeddedResource Include="$(DefaultSchematic)" LogicalName="LiveSPICE.PluginLinux.DefaultSchematic.schx" />
+  </ItemGroup>
 </Project>

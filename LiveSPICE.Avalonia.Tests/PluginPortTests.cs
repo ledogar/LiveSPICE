@@ -29,6 +29,16 @@ public class PluginPortTests
     }
 
     [Fact]
+    public void LinuxPluginStartsWithoutHardcodedSchematicByDefault()
+    {
+        LiveSPICELinuxPlugin plugin = new LiveSPICELinuxPlugin();
+
+        Assert.Null(plugin.SimulationProcessor.Schematic);
+        Assert.Empty(plugin.SchematicPath);
+        Assert.DoesNotContain("LiveSPICE.PluginLinux.DefaultSchematic.schx", typeof(LiveSPICELinuxPlugin).Assembly.GetManifestResourceNames());
+    }
+
+    [Fact]
     public void LinuxPluginCreatesAvaloniaEditorBoundToProcessor()
     {
         EnsureAvalonia();
