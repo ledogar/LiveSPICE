@@ -201,8 +201,14 @@ public sealed class SimulationAndAudioTests
             liveProcessor.Stop();
         }
 
+        double inputRms = Rms(capturedInputs.SelectMany(i => i));
+        Assert.True(inputRms > 1e-5, $"Captured built-in microphone input is too close to silence. RMS={inputRms:R}.");
+
         LiveAudioProcessor referenceProcessor = new LiveAudioProcessor(schematic);
         referenceProcessor.Start(stream.SampleRate, 4, 8);
+        List<double> expectedSamples = new List<double>();
+        List<double> actualSamples = new List<double>();
+        List<double> inputSamples = new List<double>();
         for (int block = 0; block < capturedInputs.Count; block++)
         {
             using Audio.SampleBuffer input = Buffer(capturedInputs[block]);
@@ -212,8 +218,22 @@ public sealed class SimulationAndAudioTests
             Assert.Equal(expected.Length, capturedOutputs[block].Length);
             for (int sample = 0; sample < expected.Length; sample++)
                 Assert.Equal(expected[sample], capturedOutputs[block][sample], 12);
+
+            expectedSamples.AddRange(expected);
+            actualSamples.AddRange(capturedOutputs[block]);
+            inputSamples.AddRange(capturedInputs[block]);
         }
         referenceProcessor.Stop();
+
+        double expectedRms = Rms(expectedSamples);
+        double actualRms = Rms(actualSamples);
+        double errorRms = Rms(expectedSamples.Zip(actualSamples, (expected, actual) => expected - actual));
+        double copyErrorRms = Rms(inputSamples.Zip(actualSamples, (input, actual) => input - actual));
+
+        Assert.True(expectedRms > 1e-8, $"Expected RC output is too close to silence. RMS={expectedRms:R}.");
+        Assert.True(actualRms > 1e-8, $"Live RC output is too close to silence. RMS={actualRms:R}.");
+        Assert.True(errorRms <= Math.Max(1e-10, expectedRms * 1e-8), $"Live output does not match the RC prediction. Error RMS={errorRms:R}, expected RMS={expectedRms:R}.");
+        Assert.True(copyErrorRms > inputRms * 1e-3, $"Live output looks like an unfiltered copy of the input. Copy error RMS={copyErrorRms:R}, input RMS={inputRms:R}.");
     }
 
     private static Audio.Channel? BuiltIn(IEnumerable<Audio.Channel> channels, string suffix)
@@ -226,6 +246,18 @@ public sealed class SimulationAndAudioTests
         Audio.SampleBuffer buffer = new Audio.SampleBuffer(samples.Length);
         Array.Copy(samples, buffer.Samples, samples.Length);
         return buffer;
+    }
+
+    private static double Rms(IEnumerable<double> samples)
+    {
+        double sum = 0;
+        int count = 0;
+        foreach (double sample in samples)
+        {
+            sum += sample * sample;
+            count++;
+        }
+        return count == 0 ? 0 : Math.Sqrt(sum / count);
     }
 
     private static string FindFixture(string relativePath)
