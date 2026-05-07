@@ -352,7 +352,7 @@ static void request_ui_size(LiveSpiceGenericUi* self)
         return;
 
     const int base_width = 470;
-    const int control_width = 108;
+    const int control_width = 132;
     const int max_width = 920;
     int width = base_width + (self->control_count * control_width);
     if (width < base_width)
@@ -381,8 +381,9 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     gtk_widget_get_allocation(knob->area, &allocation);
 
     double size = allocation.width < allocation.height ? allocation.width : allocation.height;
-    double center = size / 2.0;
-    double radius = (size / 2.0) - 9.0;
+    double center_x = allocation.width / 2.0;
+    double center_y = allocation.height / 2.0;
+    double radius = (size / 2.0) - 16.0;
     double value = clamp_unit(knob->value);
 
     const double label_values[] = { 0, 0.25, 0.5, 0.75, 1 };
@@ -398,26 +399,26 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
         double outer = radius + (major ? 8.2 : (medium ? 5.8 : 4.0));
         cairo_set_source_rgba(cr, 0.02, 0.02, 0.02, 0.80);
         cairo_set_line_width(cr, major ? 2.1 : (medium ? 1.45 : 1.0));
-        cairo_move_to(cr, center + cos(tick_angle) * inner, center + sin(tick_angle) * inner);
-        cairo_line_to(cr, center + cos(tick_angle) * outer, center + sin(tick_angle) * outer);
+        cairo_move_to(cr, center_x + cos(tick_angle) * inner, center_y + sin(tick_angle) * inner);
+        cairo_line_to(cr, center_x + cos(tick_angle) * outer, center_y + sin(tick_angle) * outer);
         cairo_stroke(cr);
 
     }
 
-    cairo_pattern_t* shadow = cairo_pattern_create_radial(center + 3, center + 5, radius * 0.15, center + 3, center + 5, radius);
+    cairo_pattern_t* shadow = cairo_pattern_create_radial(center_x + 3, center_y + 5, radius * 0.15, center_x + 3, center_y + 5, radius);
     cairo_pattern_add_color_stop_rgba(shadow, 0, 0, 0, 0, 0.20);
     cairo_pattern_add_color_stop_rgba(shadow, 1, 0, 0, 0, 0.00);
     cairo_set_source(cr, shadow);
-    cairo_arc(cr, center + 3, center + 5, radius, 0, 2 * G_PI);
+    cairo_arc(cr, center_x + 3, center_y + 5, radius, 0, 2 * G_PI);
     cairo_fill(cr);
     cairo_pattern_destroy(shadow);
 
-    cairo_pattern_t* body = cairo_pattern_create_radial(center - radius * 0.35, center - radius * 0.45, radius * 0.1, center, center, radius);
+    cairo_pattern_t* body = cairo_pattern_create_radial(center_x - radius * 0.35, center_y - radius * 0.45, radius * 0.1, center_x, center_y, radius);
     cairo_pattern_add_color_stop_rgb(body, 0, 0.96, 0.96, 0.93);
     cairo_pattern_add_color_stop_rgb(body, 0.42, 0.58, 0.58, 0.56);
     cairo_pattern_add_color_stop_rgb(body, 1, 0.14, 0.14, 0.14);
     cairo_set_source(cr, body);
-    cairo_arc(cr, center, center, radius, 0, 2 * G_PI);
+    cairo_arc(cr, center_x, center_y, radius, 0, 2 * G_PI);
     cairo_fill_preserve(cr);
     cairo_pattern_destroy(body);
 
@@ -425,12 +426,12 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_set_line_width(cr, 1.2);
     cairo_stroke(cr);
 
-    cairo_pattern_t* cap = cairo_pattern_create_linear(center, center - radius, center, center + radius);
+    cairo_pattern_t* cap = cairo_pattern_create_linear(center_x, center_y - radius, center_x, center_y + radius);
     cairo_pattern_add_color_stop_rgba(cap, 0, 1, 1, 1, 0.48);
     cairo_pattern_add_color_stop_rgba(cap, 0.45, 1, 1, 1, 0.06);
     cairo_pattern_add_color_stop_rgba(cap, 1, 0, 0, 0, 0.22);
     cairo_set_source(cr, cap);
-    cairo_arc(cr, center, center, radius - 3, 0, 2 * G_PI);
+    cairo_arc(cr, center_x, center_y, radius - 3, 0, 2 * G_PI);
     cairo_fill(cr);
     cairo_pattern_destroy(cap);
 
@@ -440,8 +441,8 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_set_source_rgb(cr, 0.02, 0.02, 0.02);
     cairo_set_line_width(cr, 4.0);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    cairo_move_to(cr, center + cos(angle) * indicator_inner, center + sin(angle) * indicator_inner);
-    cairo_line_to(cr, center + cos(angle) * indicator_outer, center + sin(angle) * indicator_outer);
+    cairo_move_to(cr, center_x + cos(angle) * indicator_inner, center_y + sin(angle) * indicator_inner);
+    cairo_line_to(cr, center_x + cos(angle) * indicator_outer, center_y + sin(angle) * indicator_outer);
     cairo_stroke(cr);
 
     cairo_set_font_size(cr, 11.5);
@@ -450,11 +451,11 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
         const char* label = knob_scale_label(knob->scale, i);
         cairo_text_extents_t extents;
         cairo_text_extents(cr, label, &extents);
-        double label_radius = radius + 13.4;
-        double label_x = center + cos(tick_angle) * label_radius - (extents.width / 2.0) - extents.x_bearing;
-        double label_y = center + sin(tick_angle) * label_radius + (extents.height / 2.0);
+        double label_radius = radius + 17.0;
+        double label_x = center_x + cos(tick_angle) * label_radius - (extents.width / 2.0) - extents.x_bearing;
+        double label_y = center_y + sin(tick_angle) * label_radius + (extents.height / 2.0);
         if (i == 2)
-            label_y = 1.0 - extents.y_bearing;
+            label_y = 3.0 - extents.y_bearing;
 
         cairo_set_source_rgba(cr, 1, 1, 1, 0.78);
         cairo_move_to(cr, label_x + 1, label_y + 1);
@@ -466,8 +467,8 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
 
     cairo_set_source_rgba(cr, 1, 1, 1, 0.85);
     cairo_set_line_width(cr, 1.2);
-    cairo_move_to(cr, center + cos(angle) * indicator_inner, center + sin(angle) * indicator_inner);
-    cairo_line_to(cr, center + cos(angle) * indicator_outer, center + sin(angle) * indicator_outer);
+    cairo_move_to(cr, center_x + cos(angle) * indicator_inner, center_y + sin(angle) * indicator_inner);
+    cairo_line_to(cr, center_x + cos(angle) * indicator_outer, center_y + sin(angle) * indicator_outer);
     cairo_stroke(cr);
 
     return false;
@@ -525,7 +526,7 @@ static GtkWidget* create_knob(double value, const char* name)
     knob->value = clamp_unit(value);
     knob->scale = classify_knob_scale(name);
     knob->area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(knob->area, 100, 100);
+    gtk_widget_set_size_request(knob->area, 124, 112);
     gtk_widget_add_events(knob->area, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK);
     g_signal_connect(knob->area, "draw", G_CALLBACK(draw_knob), knob);
     g_signal_connect(knob->area, "button-press-event", G_CALLBACK(knob_button_press), knob);
