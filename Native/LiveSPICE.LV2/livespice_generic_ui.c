@@ -21,6 +21,14 @@ typedef enum {
 } PortIndex;
 
 typedef struct {
+    char* name;
+    char* group;
+    char* type;
+    double value;
+    int positions;
+} SchematicControl;
+
+typedef struct {
     LV2UI_Write_Function write;
     LV2UI_Controller controller;
     LV2_URID_Map* map;
@@ -28,8 +36,148 @@ typedef struct {
     LV2_Atom_Forge forge;
     GtkWidget* root;
     GtkWidget* path_label;
+    GtkWidget* controls_box;
+    GtkWidget* empty_controls_label;
     char* schematic_path;
 } LiveSpiceGenericUi;
+
+static char* duplicate_range(const char* start, size_t length)
+{
+    char* copy = (char*)calloc(length + 1, sizeof(char));
+    if (copy == NULL)
+        return NULL;
+
+    memcpy(copy, start, length);
+    return copy;
+}
+
+static char* read_attribute(const char* element, const char* name)
+{
+    char pattern[64];
+    snprintf(pattern, sizeof(pattern), "%s=\"", name);
+
+    const char* value = strstr(element, pattern);
+    if (value == NULL)
+        return NULL;
+
+    value += strlen(pattern);
+    const char* end = strchr(value, '"');
+    if (end == NULL)
+        return NULL;
+
+    return duplicate_range(value, (size_t)(end - value));
+}
+
+static bool component_is_type(const char* type, const char* component_name)
+{
+    return type != NULL && strstr(type, component_name) != NULL;
+}
+
+static int switch_positions_from_type(const char* type)
+{
+    if (component_is_type(type, "SPDT"))
+        return 2;
+    if (component_is_type(type, "SP3T"))
+        return 3;
+    if (component_is_type(type, "SP4T"))
+        return 4;
+    if (component_is_type(type, "SP5T"))
+        return 5;
+    return 2;
+}
+
+static char* control_display_name(const SchematicControl* control)
+{
+    if (control->group != NULL && control->group[0] != '\0')
+        return strdup(control->group);
+    if (control->name != NULL && control->name[0] != '\0')
+        return strdup(control->name);
+    return strdup(control->type != NULL ? control->type : "Control");
+}
+
+static void free_schematic_control(SchematicControl* control)
+{
+    free(control->name);
+    free(control->group);
+    free(control->type);
+}
+
+static bool add_unique_control(GArray* controls, SchematicControl* control)
+{
+    char* display_name = control_display_name(control);
+    if (display_name == NULL)
+        return false;
+
+    for (guint i = 0; i < controls->len; i++) {
+        SchematicControl* existing = &g_array_index(controls, SchematicControl, i);
+        char* existing_name = control_display_name(existing);
+        bool duplicate = existing_name != NULL && strcmp(existing_name, display_name) == 0 && strcmp(existing->type, control->type) == 0;
+        free(existing_name);
+        if (duplicate) {
+            free(display_name);
+            free_schematic_control(control);
+            return true;
+        }
+    }
+
+    free(display_name);
+    g_array_append_val(controls, *control);
+    return true;
+}
+
+static GArray* read_schematic_controls(const char* path)
+{
+    GArray* controls = g_array_new(false, false, sizeof(SchematicControl));
+    if (path == NULL || path[0] == '\0')
+        return controls;
+
+    gchar* contents = NULL;
+    gsize length = 0;
+    if (!g_file_get_contents(path, &contents, &length, NULL))
+        return controls;
+
+    const char* cursor = contents;
+    while ((cursor = strstr(cursor, "<Component ")) != NULL) {
+        const char* end = strchr(cursor, '>');
+        if (end == NULL)
+            break;
+
+        char* element = duplicate_range(cursor, (size_t)(end - cursor));
+        if (element == NULL)
+            break;
+
+        char* component_type = read_attribute(element, "_Type");
+        if (component_is_type(component_type, "Potentiometer") || component_is_type(component_type, "VariableResistor")) {
+            SchematicControl control = { 0 };
+            control.name = read_attribute(element, "Name");
+            control.group = read_attribute(element, "Group");
+            control.type = strdup("pot");
+            char* wipe = read_attribute(element, "Wipe");
+            control.value = wipe != NULL ? g_ascii_strtod(wipe, NULL) : 0.5;
+            control.positions = 0;
+            free(wipe);
+            add_unique_control(controls, &control);
+        }
+        else if (component_is_type(component_type, "SPDT") || component_is_type(component_type, "SP3T") || component_is_type(component_type, "SP4T") || component_is_type(component_type, "SP5T")) {
+            SchematicControl control = { 0 };
+            control.name = read_attribute(element, "Name");
+            control.group = read_attribute(element, "Group");
+            control.type = strdup("switch");
+            char* position = read_attribute(element, "Position");
+            control.value = position != NULL ? g_ascii_strtod(position, NULL) : 0;
+            control.positions = switch_positions_from_type(component_type);
+            free(position);
+            add_unique_control(controls, &control);
+        }
+
+        free(component_type);
+        free(element);
+        cursor = end + 1;
+    }
+
+    g_free(contents);
+    return controls;
+}
 
 static void gtk_init_once(void)
 {
@@ -45,6 +193,77 @@ static void gtk_init_once(void)
 static void set_label_path(LiveSpiceGenericUi* self, const char* path)
 {
     gtk_label_set_text(GTK_LABEL(self->path_label), path != NULL && path[0] != '\0' ? path : "No schematic loaded");
+}
+
+static void clear_control_panel(LiveSpiceGenericUi* self)
+{
+    GList* children = gtk_container_get_children(GTK_CONTAINER(self->controls_box));
+    for (GList* child = children; child != NULL; child = child->next)
+        gtk_widget_destroy(GTK_WIDGET(child->data));
+    g_list_free(children);
+}
+
+static GtkWidget* create_control_label(const char* text)
+{
+    GtkWidget* label = gtk_label_new(text);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+    return label;
+}
+
+static GtkWidget* create_pot_control(const SchematicControl* control)
+{
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    char* name = control_display_name(control);
+    gtk_box_pack_start(GTK_BOX(box), create_control_label(name != NULL ? name : "Pot"), false, false, 0);
+
+    GtkWidget* slider = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.01);
+    gtk_range_set_value(GTK_RANGE(slider), control->value);
+    gtk_widget_set_size_request(slider, 120, -1);
+    gtk_box_pack_start(GTK_BOX(box), slider, false, false, 0);
+    free(name);
+    return box;
+}
+
+static GtkWidget* create_switch_control(const SchematicControl* control)
+{
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    char* name = control_display_name(control);
+    gtk_box_pack_start(GTK_BOX(box), create_control_label(name != NULL ? name : "Switch"), false, false, 0);
+
+    GtkWidget* combo = gtk_combo_box_text_new();
+    for (int i = 0; i < control->positions; i++) {
+        char text[16];
+        snprintf(text, sizeof(text), "%d", i);
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), text);
+    }
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo), (int)control->value);
+    gtk_box_pack_start(GTK_BOX(box), combo, false, false, 0);
+    free(name);
+    return box;
+}
+
+static void rebuild_control_panel(LiveSpiceGenericUi* self, const char* path)
+{
+    clear_control_panel(self);
+
+    GArray* controls = read_schematic_controls(path);
+    if (controls->len == 0) {
+        self->empty_controls_label = create_control_label(path != NULL && path[0] != '\0' ? "No schematic controls found" : "Load a schematic to show controls");
+        gtk_box_pack_start(GTK_BOX(self->controls_box), self->empty_controls_label, false, false, 0);
+    }
+    else {
+        for (guint i = 0; i < controls->len; i++) {
+            SchematicControl* control = &g_array_index(controls, SchematicControl, i);
+            GtkWidget* widget = strcmp(control->type, "switch") == 0 ? create_switch_control(control) : create_pot_control(control);
+            gtk_box_pack_start(GTK_BOX(self->controls_box), widget, false, false, 0);
+        }
+    }
+
+    for (guint i = 0; i < controls->len; i++)
+        free_schematic_control(&g_array_index(controls, SchematicControl, i));
+    g_array_free(controls, true);
+    gtk_widget_show_all(self->controls_box);
 }
 
 static void send_schematic_path(LiveSpiceGenericUi* self, const char* path)
@@ -71,6 +290,7 @@ static void set_schematic_path(LiveSpiceGenericUi* self, const char* path)
     free(self->schematic_path);
     self->schematic_path = copy;
     set_label_path(self, copy);
+    rebuild_control_panel(self, copy);
     send_schematic_path(self, copy);
 }
 
@@ -163,6 +383,14 @@ static LV2UI_Handle instantiate(
     gtk_box_pack_start(GTK_BOX(controls), load_button, false, false, 0);
     gtk_box_pack_start(GTK_BOX(controls), clear_button, false, false, 0);
     gtk_box_pack_start(GTK_BOX(self->root), controls, false, false, 0);
+
+    GtkWidget* scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
+    gtk_widget_set_size_request(scroll, 320, 96);
+    self->controls_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_container_add(GTK_CONTAINER(scroll), self->controls_box);
+    gtk_box_pack_start(GTK_BOX(self->root), scroll, true, true, 0);
+    rebuild_control_panel(self, "");
 
     g_signal_connect(load_button, "clicked", G_CALLBACK(load_schematic_clicked), self);
     g_signal_connect(clear_button, "clicked", G_CALLBACK(clear_schematic_clicked), self);
