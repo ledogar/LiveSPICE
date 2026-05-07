@@ -231,20 +231,27 @@ internal static class LinuxAudioDiscovery
 {
     public static IEnumerable<string> InputPorts()
     {
-        return AudioPorts("pw-link", "-o")
-            .Concat(AudioPorts("jack_lsp", null).Where(i => i.Contains(":capture_", StringComparison.OrdinalIgnoreCase)))
+        return PreferredPorts(JackPorts(":capture_", ":monitor_"), AudioPorts("pw-link", "-o"));
+    }
+
+    public static IEnumerable<string> OutputPorts()
+    {
+        return PreferredPorts(JackPorts(":playback_"), AudioPorts("pw-link", "-i"));
+    }
+
+    internal static IEnumerable<string> PreferredPorts(IEnumerable<string> jackPorts, IEnumerable<string> pipeWirePorts)
+    {
+        string[] preferred = jackPorts.Where(IsAudioPort).ToArray();
+        return (preferred.Length > 0 ? preferred : pipeWirePorts)
             .Where(IsAudioPort)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(i => i, StringComparer.OrdinalIgnoreCase);
     }
 
-    public static IEnumerable<string> OutputPorts()
+    private static IEnumerable<string> JackPorts(params string[] portKinds)
     {
-        return AudioPorts("pw-link", "-i")
-            .Concat(AudioPorts("jack_lsp", null).Where(i => i.Contains(":playback_", StringComparison.OrdinalIgnoreCase)))
-            .Where(IsAudioPort)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(i => i, StringComparer.OrdinalIgnoreCase);
+        return AudioPorts("jack_lsp", null)
+            .Where(port => portKinds.Any(kind => port.Contains(kind, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static IEnumerable<string> AudioPorts(string command, string? arguments)

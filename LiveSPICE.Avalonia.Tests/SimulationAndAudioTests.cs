@@ -69,6 +69,16 @@ public sealed class SimulationAndAudioTests
     }
 
     [Fact]
+    public void LinuxAudioDiscoveryPrefersJackPortNamesOverRawPipeWireNodes()
+    {
+        string[] ports = LinuxAudioDiscovery.PreferredPorts(
+            new[] { "Built-in Audio Analog Stereo:capture_FL", "Midi-Bridge:Midi Through:(capture_0) Midi Through Port-0" },
+            new[] { "alsa_input.pci-0000_00_1f.3.analog-stereo:capture_FL" }).ToArray();
+
+        Assert.Equal(new[] { "Built-in Audio Analog Stereo:capture_FL" }, ports);
+    }
+
+    [Fact]
     public void WaveformWindowDiscoversNodeProbeCandidates()
     {
         Circuit.Circuit circuit = Schematic.Load(FindFixture("Tests/Circuits/Passive 1stOrder Highpass RC.schx")).Build();
