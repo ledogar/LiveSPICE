@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Xml.Serialization;
 using AudioPlugSharp;
+using LiveSPICE.Avalonia;
 using LiveSPICE.PluginCore;
 
 namespace LiveSPICE.PluginLinux;
@@ -22,7 +23,7 @@ public class LiveSPICELinuxPlugin : AudioPluginBase
         PluginCategory = "Fx";
         PluginVersion = "1.1.0";
         PluginID = 0xDC8558DC41A44872;
-        HasUserInterface = false;
+        HasUserInterface = true;
         EditorWidth = 700;
         EditorHeight = 420;
         SimulationProcessor = new SimulationProcessor();
@@ -31,6 +32,11 @@ public class LiveSPICELinuxPlugin : AudioPluginBase
     public SimulationProcessor SimulationProcessor { get; }
 
     public string SchematicPath => SimulationProcessor.SchematicPath;
+
+    public PluginEditorWindow CreateEditorWindow()
+    {
+        return new PluginEditorWindow(SimulationProcessor);
+    }
 
     public override void Initialize()
     {

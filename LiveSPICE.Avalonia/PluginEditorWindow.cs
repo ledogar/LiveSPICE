@@ -65,6 +65,22 @@ public sealed class PluginEditorWindow : Window
 
     internal int TestOverlayControlCount => overlayCanvas.Children.Count;
 
+    internal string TestLoadedText => loadedText.Text ?? string.Empty;
+
+    internal int TestControlPanelCount => controlsPanel.Children.Count;
+
+    internal object? TestSelectedOversample
+    {
+        get => oversampleBox.SelectedItem;
+        set => oversampleBox.SelectedItem = value;
+    }
+
+    internal object? TestSelectedIterations
+    {
+        get => iterationsBox.SelectedItem;
+        set => iterationsBox.SelectedItem = value;
+    }
+
     internal APoint TestSchematicPointFor(IComponentWrapper wrapper)
     {
         return SchematicPointFor(wrapper);

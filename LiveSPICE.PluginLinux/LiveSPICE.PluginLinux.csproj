@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\LiveSPICE.Avalonia\LiveSPICE.Avalonia.csproj" />
     <ProjectReference Include="..\LiveSPICE.PluginCore\LiveSPICE.PluginCore.csproj" />
   </ItemGroup>
   <ItemGroup>
