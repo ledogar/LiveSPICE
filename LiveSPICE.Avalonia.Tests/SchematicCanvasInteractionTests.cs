@@ -1,4 +1,5 @@
 using Circuit;
+using Avalonia.Threading;
 using LiveSPICE.Avalonia;
 using Xunit;
 
@@ -165,7 +166,9 @@ public sealed class SchematicCanvasInteractionTests
         public static TestContext Load()
         {
             SchematicDocument document = SchematicDocument.Open(FindFixture("Tests/Circuits/Passive 1stOrder Highpass RC.schx"));
-            SchematicCanvas canvas = new SchematicCanvas { Document = document };
+            SchematicCanvas canvas = Dispatcher.UIThread.CheckAccess()
+                ? new SchematicCanvas { Document = document }
+                : Dispatcher.UIThread.Invoke(() => new SchematicCanvas { Document = document });
             return new TestContext(document, canvas);
         }
 

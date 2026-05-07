@@ -5,3 +5,8 @@
     a lv2:Plugin ;
     lv2:binary <livespice_mxr_phase90.so> ;
     rdfs:seeAlso <livespice_mxr_phase90.ttl> .
+
+<https://livespice.org/plugins/generic>
+    a lv2:Plugin ;
+    lv2:binary <livespice_generic.so> ;
+    rdfs:seeAlso <livespice_generic.ttl> .
