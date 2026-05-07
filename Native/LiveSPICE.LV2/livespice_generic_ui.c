@@ -69,9 +69,7 @@ static const char* css_template =
     "  border: 1px solid #4b4b4b; box-shadow: inset 0 1px rgba(255,255,255,0.9), 0 1px rgba(0,0,0,0.25);"
     "}"
     ".livespice-control-card {"
-    "  background-color: rgba(235,235,235,0.42); border: 1px solid rgba(35,35,35,0.28);"
-    "  border-radius: 5px; padding: 6px; box-shadow: inset 0 1px rgba(255,255,255,0.45);"
-    "  min-width: 86px; min-height: 88px;"
+    "  padding: 2px 4px; min-width: 82px; min-height: 86px;"
     "}"
     ".livespice-control-label { color: #101010; font-weight: 800; font-size: 11px; text-shadow: 0 1px rgba(255,255,255,0.45); }"
     ".livespice-combo { color: #111; font-weight: 700; }";
@@ -273,13 +271,16 @@ static void request_ui_size(LiveSpiceGenericUi* self)
     if (self->resize == NULL || self->resize->ui_resize == NULL)
         return;
 
-    int width = 360 + (self->control_count * 104);
-    if (width < 420)
-        width = 420;
-    if (width > 860)
-        width = 860;
+    const int base_width = 470;
+    const int control_width = 96;
+    const int max_width = 920;
+    int width = base_width + (self->control_count * control_width);
+    if (width < base_width)
+        width = base_width;
+    if (width > max_width)
+        width = max_width;
 
-    int height = self->control_count > 0 ? 205 : 150;
+    int height = self->control_count > 0 ? 190 : 145;
     self->resize->ui_resize(self->resize->handle, width, height);
 }
 
@@ -419,7 +420,7 @@ static GtkWidget* create_pot_control(const SchematicControl* control)
 {
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     add_css_class(box, "livespice-control-card");
-    gtk_widget_set_size_request(box, 92, 92);
+    gtk_widget_set_size_request(box, 86, 90);
     gtk_widget_set_valign(box, GTK_ALIGN_START);
     char* name = control_display_name(control);
     gtk_box_pack_start(GTK_BOX(box), create_control_label(name != NULL ? name : "Pot"), false, false, 0);
@@ -435,7 +436,7 @@ static GtkWidget* create_switch_control(const SchematicControl* control)
 {
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     add_css_class(box, "livespice-control-card");
-    gtk_widget_set_size_request(box, 92, 92);
+    gtk_widget_set_size_request(box, 86, 90);
     gtk_widget_set_valign(box, GTK_ALIGN_START);
     char* name = control_display_name(control);
     gtk_box_pack_start(GTK_BOX(box), create_control_label(name != NULL ? name : "Switch"), false, false, 0);
@@ -653,3 +654,62 @@ LV2_SYMBOL_EXPORT const LV2UI_Descriptor* lv2ui_descriptor(uint32_t index)
 {
     return index == 0 ? &descriptor : NULL;
 }
+
+#ifdef LIVESPICE_UI_SMOKE
+static uint32_t smoke_map_uri(LV2_URID_Map_Handle handle, const char* uri)
+{
+    (void)handle;
+    if (strcmp(uri, LV2_ATOM__eventTransfer) == 0)
+        return 1;
+    if (strcmp(uri, LV2_ATOM__Path) == 0)
+        return 2;
+    if (strcmp(uri, LV2_ATOM__String) == 0)
+        return 3;
+    return 100;
+}
+
+static void smoke_write(LV2UI_Controller controller, uint32_t port_index, uint32_t buffer_size, uint32_t port_protocol, const void* buffer)
+{
+    (void)controller;
+    (void)port_index;
+    (void)buffer_size;
+    (void)port_protocol;
+    (void)buffer;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc < 4)
+        return 2;
+
+    gtk_init(&argc, &argv);
+
+    LV2_URID_Map map = { NULL, smoke_map_uri };
+    LV2_Feature map_feature = { LV2_URID__map, &map };
+    const LV2_Feature* features[] = { &map_feature, NULL };
+    LV2UI_Widget widget = NULL;
+    LiveSpiceGenericUi* ui = (LiveSpiceGenericUi*)instantiate(&descriptor, LIVESPICE_GENERIC_URI, argv[1], smoke_write, NULL, &widget, features);
+    if (ui == NULL || widget == NULL)
+        return 3;
+
+    set_schematic_path(ui, argv[2]);
+
+    GtkWidget* window = gtk_offscreen_window_new();
+    gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(widget));
+    gtk_widget_set_size_request(window, 760, 190);
+    gtk_widget_show_all(window);
+
+    while (gtk_events_pending())
+        gtk_main_iteration();
+
+    GdkPixbuf* pixbuf = gtk_offscreen_window_get_pixbuf(GTK_OFFSCREEN_WINDOW(window));
+    if (pixbuf == NULL)
+        return 4;
+
+    gboolean ok = gdk_pixbuf_save(pixbuf, argv[3], "png", NULL, NULL);
+    g_object_unref(pixbuf);
+    cleanup((LV2UI_Handle)ui);
+    gtk_widget_destroy(window);
+    return ok ? 0 : 5;
+}
+#endif

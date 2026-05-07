@@ -21,6 +21,7 @@ make -C Native/LiveSPICE.LV2 clean all
 
 ```bash
 make -C Native/LiveSPICE.LV2 test
+make -C Native/LiveSPICE.LV2 ui-smoke
 ```
 
 Expected URIs:
@@ -50,3 +51,5 @@ carla-single lv2 https://livespice.org/plugins/generic
 ```
 
 If the plugin loads successfully, Carla opens/runs the plugin host instead of immediately failing with a plugin description error.
+
+The `ui-smoke` target renders the generic GTK UI offscreen with the MXR Phase 90 example and writes `out/lv2-generic-ui-smoke.png` for layout review.
