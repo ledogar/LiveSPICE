@@ -17,6 +17,11 @@ public sealed class LinuxAudioDriver : Audio.Driver
     }
 
     public override string Name => "PipeWire/JACK";
+
+    public override string ToString()
+    {
+        return Name;
+    }
 }
 
 internal sealed class LinuxAudioChannel : Audio.Channel
@@ -36,10 +41,17 @@ internal sealed class LinuxAudioChannel : Audio.Channel
 
 internal sealed class LinuxAudioDevice : Audio.Device
 {
-    public LinuxAudioDevice(Audio.Channel[] input, Audio.Channel[] output) : base("System audio ports")
+    public const string DeviceName = "PipeWire/JACK port graph";
+
+    public LinuxAudioDevice(Audio.Channel[] input, Audio.Channel[] output) : base(DeviceName)
     {
         inputs = input;
         outputs = output;
+    }
+
+    public override string ToString()
+    {
+        return Name;
     }
 
     public override Audio.Stream Open(Audio.Stream.SampleHandler callback, Audio.Channel[] input, Audio.Channel[] output)

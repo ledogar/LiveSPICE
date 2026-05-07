@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Data;
 
 namespace LiveSPICE.Avalonia;
 
@@ -27,6 +28,8 @@ public sealed class AudioConfigWindow : Window
         MinHeight = 360;
         drivers.SelectionChanged += (_, _) => PopulateDevices();
         devices.SelectionChanged += (_, _) => PopulateChannels();
+        drivers.DisplayMemberBinding = new Binding(nameof(Audio.Driver.Name));
+        devices.DisplayMemberBinding = new Binding(nameof(Audio.Device.Name));
         Content = BuildContent();
         PopulateDrivers();
         Closed += (_, _) => StopTest();
@@ -52,7 +55,7 @@ public sealed class AudioConfigWindow : Window
         StackPanel panel = new StackPanel { Spacing = 8, Margin = new global::Avalonia.Thickness(12) };
         panel.Children.Add(Label("Driver"));
         panel.Children.Add(drivers);
-        panel.Children.Add(Label("Device"));
+        panel.Children.Add(Label("Device / port graph"));
         panel.Children.Add(devices);
 
         Grid channels = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 10 };
@@ -73,7 +76,7 @@ public sealed class AudioConfigWindow : Window
         drivers.ItemsSource = availableDrivers;
         drivers.SelectedItem = availableDrivers.FirstOrDefault(i => i.Name == settings.AudioDriver) ?? availableDrivers.FirstOrDefault();
         PopulateDevices();
-        status.Text = availableDrivers.Count == 0 ? "No audio drivers are available in this build." : "Ready";
+        status.Text = availableDrivers.Count == 0 ? "No audio drivers are available in this build." : DriverHint(drivers.SelectedItem as Audio.Driver);
     }
 
     private void PopulateDevices()
@@ -83,6 +86,7 @@ public sealed class AudioConfigWindow : Window
         devices.ItemsSource = availableDevices;
         devices.SelectedItem = availableDevices.FirstOrDefault(i => i.Name == settings.AudioDevice) ?? availableDevices.FirstOrDefault();
         PopulateChannels();
+        status.Text = driver == null ? "No audio driver selected." : DriverHint(driver);
     }
 
     private void PopulateChannels()
@@ -92,6 +96,8 @@ public sealed class AudioConfigWindow : Window
         outputs.ItemsSource = device?.OutputChannels ?? Array.Empty<Audio.Channel>();
         SelectSaved(inputs, settings.AudioInputs);
         SelectSaved(outputs, settings.AudioOutputs);
+        if (device != null)
+            status.Text = DeviceHint(device);
     }
 
     private void SaveAndClose()
@@ -185,6 +191,22 @@ public sealed class AudioConfigWindow : Window
         foreach (object? item in list.Items)
             if (item is Audio.Channel channel && selected.Contains(channel.Name))
                 list.SelectedItems.Add(item);
+    }
+
+    private static string DriverHint(Audio.Driver? driver)
+    {
+        if (driver == null)
+            return "No audio driver selected.";
+        return driver.Name == "PipeWire/JACK"
+            ? "PipeWire/JACK exposes individual ports below; choose capture and playback ports there."
+            : "Ready";
+    }
+
+    private static string DeviceHint(Audio.Device device)
+    {
+        return device.Name == LinuxAudioDevice.DeviceName
+            ? "Select actual PipeWire/JACK input and output ports below."
+            : "Ready";
     }
 
     private static Border ChannelPanel(string title, ListBox list)

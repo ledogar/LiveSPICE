@@ -11,6 +11,11 @@ public sealed class VirtualAudioDriver : Audio.Driver
     }
 
     public override string Name => "LiveSPICE Virtual Audio";
+
+    public override string ToString()
+    {
+        return Name;
+    }
 }
 
 internal sealed class VirtualAudioChannel : Audio.Channel
@@ -36,6 +41,11 @@ internal sealed class VirtualAudioDevice : Audio.Device
     {
         inputs = new Audio.Channel[] { new VirtualAudioChannel("Input 1") };
         outputs = new Audio.Channel[] { new VirtualAudioChannel("Output 1") };
+    }
+
+    public override string ToString()
+    {
+        return Name;
     }
 
     public override Audio.Stream Open(Audio.Stream.SampleHandler callback, Audio.Channel[] input, Audio.Channel[] output)
