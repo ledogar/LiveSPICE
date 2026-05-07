@@ -35,7 +35,59 @@ typedef struct {
     bool dragging;
     double drag_y;
     double drag_value;
+    char* low_label;
+    char* mid_label;
+    char* high_label;
 } KnobControl;
+
+typedef enum {
+    KNOB_SCALE_UNIPOLAR,
+    KNOB_SCALE_BIPOLAR
+} KnobScale;
+
+typedef struct {
+    const char* keyword;
+    KnobScale scale;
+} KnobNameRule;
+
+static const KnobNameRule knob_name_rules[] = {
+    { "treble", KNOB_SCALE_BIPOLAR },
+    { "middle", KNOB_SCALE_BIPOLAR },
+    { "mid", KNOB_SCALE_BIPOLAR },
+    { "bass", KNOB_SCALE_BIPOLAR },
+    { "tone", KNOB_SCALE_BIPOLAR },
+    { "eq", KNOB_SCALE_BIPOLAR },
+    { "equal", KNOB_SCALE_BIPOLAR },
+    { "contour", KNOB_SCALE_BIPOLAR },
+    { "tilt", KNOB_SCALE_BIPOLAR },
+    { "cut", KNOB_SCALE_BIPOLAR },
+    { "boost", KNOB_SCALE_BIPOLAR },
+    { "gain", KNOB_SCALE_UNIPOLAR },
+    { "drive", KNOB_SCALE_UNIPOLAR },
+    { "dist", KNOB_SCALE_UNIPOLAR },
+    { "fuzz", KNOB_SCALE_UNIPOLAR },
+    { "volume", KNOB_SCALE_UNIPOLAR },
+    { "vol", KNOB_SCALE_UNIPOLAR },
+    { "master", KNOB_SCALE_UNIPOLAR },
+    { "level", KNOB_SCALE_UNIPOLAR },
+    { "output", KNOB_SCALE_UNIPOLAR },
+    { "input", KNOB_SCALE_UNIPOLAR },
+    { "trim", KNOB_SCALE_UNIPOLAR },
+    { "trimmer", KNOB_SCALE_UNIPOLAR },
+    { "presence", KNOB_SCALE_UNIPOLAR },
+    { "presense", KNOB_SCALE_UNIPOLAR },
+    { "resonance", KNOB_SCALE_UNIPOLAR },
+    { "res", KNOB_SCALE_UNIPOLAR },
+    { "speed", KNOB_SCALE_UNIPOLAR },
+    { "rate", KNOB_SCALE_UNIPOLAR },
+    { "depth", KNOB_SCALE_UNIPOLAR },
+    { "mix", KNOB_SCALE_UNIPOLAR },
+    { "blend", KNOB_SCALE_UNIPOLAR },
+    { "feedback", KNOB_SCALE_UNIPOLAR },
+    { "sustain", KNOB_SCALE_UNIPOLAR },
+    { "attack", KNOB_SCALE_UNIPOLAR },
+    { "release", KNOB_SCALE_UNIPOLAR },
+};
 
 typedef struct {
     LV2UI_Write_Function write;
@@ -252,6 +304,29 @@ static double clamp_unit(double value)
     return value;
 }
 
+static double knob_angle_for_value(double value)
+{
+    return (135.0 + (270.0 * clamp_unit(value))) * G_PI / 180.0;
+}
+
+static KnobScale classify_knob_scale(const char* name)
+{
+    if (name == NULL)
+        return KNOB_SCALE_UNIPOLAR;
+
+    char* lower = g_ascii_strdown(name, -1);
+    KnobScale scale = KNOB_SCALE_UNIPOLAR;
+    for (size_t i = 0; i < sizeof(knob_name_rules) / sizeof(knob_name_rules[0]); i++) {
+        if (strstr(lower, knob_name_rules[i].keyword) != NULL) {
+            scale = knob_name_rules[i].scale;
+            break;
+        }
+    }
+
+    g_free(lower);
+    return scale;
+}
+
 static void set_label_path(LiveSpiceGenericUi* self, const char* path)
 {
     gtk_label_set_text(GTK_LABEL(self->path_label), path != NULL && path[0] != '\0' ? path : "No schematic loaded");
@@ -305,6 +380,24 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     double radius = (size / 2.0) - 5.0;
     double value = clamp_unit(knob->value);
 
+    const double tick_values[] = { 0, 0.5, 1 };
+    const char* tick_labels[] = { knob->low_label, knob->mid_label, knob->high_label };
+
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 8.0);
+    for (int i = 0; i < 3; i++) {
+        double tick_angle = knob_angle_for_value(tick_values[i]);
+        double inner = radius + 1.5;
+        double outer = radius + 5.5;
+        cairo_set_source_rgba(cr, 0.02, 0.02, 0.02, 0.80);
+        cairo_set_line_width(cr, 1.4);
+        cairo_move_to(cr, center + cos(tick_angle) * inner, center + sin(tick_angle) * inner);
+        cairo_line_to(cr, center + cos(tick_angle) * outer, center + sin(tick_angle) * outer);
+        cairo_stroke(cr);
+
+    }
+
     cairo_pattern_t* shadow = cairo_pattern_create_radial(center + 3, center + 5, radius * 0.15, center + 3, center + 5, radius);
     cairo_pattern_add_color_stop_rgba(shadow, 0, 0, 0, 0, 0.20);
     cairo_pattern_add_color_stop_rgba(shadow, 1, 0, 0, 0, 0.00);
@@ -335,7 +428,7 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_fill(cr);
     cairo_pattern_destroy(cap);
 
-    double angle = (-90.0 + (270.0 * value)) * G_PI / 180.0;
+    double angle = knob_angle_for_value(value);
     double indicator_inner = radius * 0.18;
     double indicator_outer = radius * 0.78;
     cairo_set_source_rgb(cr, 0.02, 0.02, 0.02);
@@ -344,6 +437,24 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_move_to(cr, center + cos(angle) * indicator_inner, center + sin(angle) * indicator_inner);
     cairo_line_to(cr, center + cos(angle) * indicator_outer, center + sin(angle) * indicator_outer);
     cairo_stroke(cr);
+
+    for (int i = 0; i < 3; i++) {
+        double tick_angle = knob_angle_for_value(tick_values[i]);
+        cairo_text_extents_t extents;
+        cairo_text_extents(cr, tick_labels[i], &extents);
+        double label_radius = radius + 9.0;
+        double label_x = center + cos(tick_angle) * label_radius - (extents.width / 2.0) - extents.x_bearing;
+        double label_y = center + sin(tick_angle) * label_radius + (extents.height / 2.0);
+        if (i == 1)
+            label_y = 9.0 + extents.height;
+
+        cairo_set_source_rgba(cr, 1, 1, 1, 0.78);
+        cairo_move_to(cr, label_x + 1, label_y + 1);
+        cairo_show_text(cr, tick_labels[i]);
+        cairo_set_source_rgba(cr, 0, 0, 0, 0.82);
+        cairo_move_to(cr, label_x, label_y);
+        cairo_show_text(cr, tick_labels[i]);
+    }
 
     cairo_set_source_rgba(cr, 1, 1, 1, 0.85);
     cairo_set_line_width(cr, 1.2);
@@ -397,15 +508,29 @@ static gboolean knob_scroll(GtkWidget* widget, GdkEventScroll* event, gpointer d
 
 static void free_knob_control(gpointer data)
 {
-    free(data);
+    KnobControl* knob = (KnobControl*)data;
+    free(knob->low_label);
+    free(knob->mid_label);
+    free(knob->high_label);
+    free(knob);
 }
 
-static GtkWidget* create_knob(double value)
+static GtkWidget* create_knob(double value, const char* name)
 {
     KnobControl* knob = (KnobControl*)calloc(1, sizeof(KnobControl));
     knob->value = clamp_unit(value);
+    if (classify_knob_scale(name) == KNOB_SCALE_BIPOLAR) {
+        knob->low_label = strdup("-5");
+        knob->mid_label = strdup("0");
+        knob->high_label = strdup("+5");
+    }
+    else {
+        knob->low_label = strdup("0");
+        knob->mid_label = strdup("5");
+        knob->high_label = strdup("10");
+    }
     knob->area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(knob->area, 68, 68);
+    gtk_widget_set_size_request(knob->area, 88, 88);
     gtk_widget_add_events(knob->area, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK);
     g_signal_connect(knob->area, "draw", G_CALLBACK(draw_knob), knob);
     g_signal_connect(knob->area, "button-press-event", G_CALLBACK(knob_button_press), knob);
@@ -425,7 +550,7 @@ static GtkWidget* create_pot_control(const SchematicControl* control)
     char* name = control_display_name(control);
     gtk_box_pack_start(GTK_BOX(box), create_control_label(name != NULL ? name : "Pot"), false, false, 0);
 
-    GtkWidget* knob = create_knob(control->value);
+    GtkWidget* knob = create_knob(control->value, name);
     gtk_widget_set_halign(knob, GTK_ALIGN_CENTER);
     gtk_box_pack_start(GTK_BOX(box), knob, false, false, 0);
     free(name);
