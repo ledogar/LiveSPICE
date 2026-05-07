@@ -29,21 +29,19 @@ typedef struct {
     int positions;
 } SchematicControl;
 
+typedef enum {
+    KNOB_SCALE_UNIPOLAR,
+    KNOB_SCALE_BIPOLAR
+} KnobScale;
+
 typedef struct {
     GtkWidget* area;
     double value;
     bool dragging;
     double drag_y;
     double drag_value;
-    char* low_label;
-    char* mid_label;
-    char* high_label;
+    KnobScale scale;
 } KnobControl;
-
-typedef enum {
-    KNOB_SCALE_UNIPOLAR,
-    KNOB_SCALE_BIPOLAR
-} KnobScale;
 
 typedef struct {
     const char* keyword;
@@ -309,6 +307,13 @@ static double knob_angle_for_value(double value)
     return (135.0 + (270.0 * clamp_unit(value))) * G_PI / 180.0;
 }
 
+static const char* knob_scale_label(KnobScale scale, int index)
+{
+    static const char* unipolar_labels[] = { "0", "2.5", "5", "7.5", "10" };
+    static const char* bipolar_labels[] = { "-5", "-2.5", "0", "+2.5", "+5" };
+    return scale == KNOB_SCALE_BIPOLAR ? bipolar_labels[index] : unipolar_labels[index];
+}
+
 static KnobScale classify_knob_scale(const char* name)
 {
     if (name == NULL)
@@ -380,18 +385,19 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     double radius = (size / 2.0) - 5.0;
     double value = clamp_unit(knob->value);
 
-    const double tick_values[] = { 0, 0.5, 1 };
-    const char* tick_labels[] = { knob->low_label, knob->mid_label, knob->high_label };
+    const double label_values[] = { 0, 0.25, 0.5, 0.75, 1 };
 
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, 8.0);
-    for (int i = 0; i < 3; i++) {
-        double tick_angle = knob_angle_for_value(tick_values[i]);
-        double inner = radius + 1.5;
-        double outer = radius + 5.5;
+    for (int i = 0; i <= 16; i++) {
+        double tick_value = (double)i / 16.0;
+        double tick_angle = knob_angle_for_value(tick_value);
+        bool major = i % 4 == 0;
+        bool medium = i % 2 == 0;
+        double inner = radius + 1.0;
+        double outer = radius + (major ? 8.2 : (medium ? 5.8 : 4.0));
         cairo_set_source_rgba(cr, 0.02, 0.02, 0.02, 0.80);
-        cairo_set_line_width(cr, 1.4);
+        cairo_set_line_width(cr, major ? 2.1 : (medium ? 1.45 : 1.0));
         cairo_move_to(cr, center + cos(tick_angle) * inner, center + sin(tick_angle) * inner);
         cairo_line_to(cr, center + cos(tick_angle) * outer, center + sin(tick_angle) * outer);
         cairo_stroke(cr);
@@ -438,22 +444,24 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_line_to(cr, center + cos(angle) * indicator_outer, center + sin(angle) * indicator_outer);
     cairo_stroke(cr);
 
-    for (int i = 0; i < 3; i++) {
-        double tick_angle = knob_angle_for_value(tick_values[i]);
+    cairo_set_font_size(cr, 9.5);
+    for (int i = 0; i < 5; i++) {
+        double tick_angle = knob_angle_for_value(label_values[i]);
+        const char* label = knob_scale_label(knob->scale, i);
         cairo_text_extents_t extents;
-        cairo_text_extents(cr, tick_labels[i], &extents);
-        double label_radius = radius + 9.0;
+        cairo_text_extents(cr, label, &extents);
+        double label_radius = radius + 10.5;
         double label_x = center + cos(tick_angle) * label_radius - (extents.width / 2.0) - extents.x_bearing;
         double label_y = center + sin(tick_angle) * label_radius + (extents.height / 2.0);
-        if (i == 1)
+        if (i == 2)
             label_y = 9.0 + extents.height;
 
         cairo_set_source_rgba(cr, 1, 1, 1, 0.78);
         cairo_move_to(cr, label_x + 1, label_y + 1);
-        cairo_show_text(cr, tick_labels[i]);
+        cairo_show_text(cr, label);
         cairo_set_source_rgba(cr, 0, 0, 0, 0.82);
         cairo_move_to(cr, label_x, label_y);
-        cairo_show_text(cr, tick_labels[i]);
+        cairo_show_text(cr, label);
     }
 
     cairo_set_source_rgba(cr, 1, 1, 1, 0.85);
@@ -508,27 +516,14 @@ static gboolean knob_scroll(GtkWidget* widget, GdkEventScroll* event, gpointer d
 
 static void free_knob_control(gpointer data)
 {
-    KnobControl* knob = (KnobControl*)data;
-    free(knob->low_label);
-    free(knob->mid_label);
-    free(knob->high_label);
-    free(knob);
+    free(data);
 }
 
 static GtkWidget* create_knob(double value, const char* name)
 {
     KnobControl* knob = (KnobControl*)calloc(1, sizeof(KnobControl));
     knob->value = clamp_unit(value);
-    if (classify_knob_scale(name) == KNOB_SCALE_BIPOLAR) {
-        knob->low_label = strdup("-5");
-        knob->mid_label = strdup("0");
-        knob->high_label = strdup("+5");
-    }
-    else {
-        knob->low_label = strdup("0");
-        knob->mid_label = strdup("5");
-        knob->high_label = strdup("10");
-    }
+    knob->scale = classify_knob_scale(name);
     knob->area = gtk_drawing_area_new();
     gtk_widget_set_size_request(knob->area, 88, 88);
     gtk_widget_add_events(knob->area, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK);
