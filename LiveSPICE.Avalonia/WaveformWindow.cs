@@ -244,7 +244,8 @@ public sealed class WaveformWindow : Window
 
     private Audio.Device SelectedDevice()
     {
-        Audio.Driver driver = Audio.Driver.Drivers.FirstOrDefault(i => i.Name == settings.AudioDriver) ?? Audio.Driver.Drivers.First();
+        IReadOnlyList<Audio.Driver> drivers = AvaloniaAudioDrivers.Available();
+        Audio.Driver driver = drivers.FirstOrDefault(i => i.Name == settings.AudioDriver && i.Devices.Any()) ?? drivers.First(i => i.Devices.Any());
         return driver.Devices.FirstOrDefault(i => i.Name == settings.AudioDevice) ?? driver.Devices.First();
     }
 

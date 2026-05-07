@@ -69,7 +69,7 @@ public sealed class AudioConfigWindow : Window
 
     private void PopulateDrivers()
     {
-        List<Audio.Driver> availableDrivers = Audio.Driver.Drivers.ToList();
+        List<Audio.Driver> availableDrivers = AvaloniaAudioDrivers.Available().ToList();
         drivers.ItemsSource = availableDrivers;
         drivers.SelectedItem = availableDrivers.FirstOrDefault(i => i.Name == settings.AudioDriver) ?? availableDrivers.FirstOrDefault();
         PopulateDevices();

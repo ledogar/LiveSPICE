@@ -68,7 +68,7 @@ internal sealed unsafe class JackAudioStream : Audio.Stream
     public JackAudioStream(SampleHandler callback, LinuxAudioChannel[] input, LinuxAudioChannel[] output) : base(input, output)
     {
         this.callback = callback;
-        IntPtr status;
+        int status;
         client = JackNative.jack_client_open("LiveSPICE", JackNullOption, out status);
         if (client == IntPtr.Zero)
             throw new InvalidOperationException("Could not open JACK client. Is JACK or PipeWire JACK running?");
@@ -89,9 +89,9 @@ internal sealed unsafe class JackAudioStream : Audio.Stream
         JackNative.Check(JackNative.jack_activate(client), "activate JACK client");
 
         for (int i = 0; i < input.Length; i++)
-            JackNative.jack_connect(client, input[i].Name, JackNative.jack_port_name(inputPorts[i]));
+            JackNative.jack_connect(client, input[i].Name, JackNative.PortName(inputPorts[i]));
         for (int i = 0; i < output.Length; i++)
-            JackNative.jack_connect(client, JackNative.jack_port_name(outputPorts[i]), output[i].Name);
+            JackNative.jack_connect(client, JackNative.PortName(outputPorts[i]), output[i].Name);
     }
 
     public override double SampleRate => sampleRate;
@@ -174,7 +174,7 @@ internal delegate int JackProcessCallback(uint frames, IntPtr arg);
 internal static class JackNative
 {
     [DllImport("jack", CallingConvention = CallingConvention.Cdecl)]
-    public static extern IntPtr jack_client_open(string clientName, uint options, out IntPtr status);
+    public static extern IntPtr jack_client_open(string clientName, uint options, out int status);
 
     [DllImport("jack", CallingConvention = CallingConvention.Cdecl)]
     public static extern int jack_client_close(IntPtr client);
@@ -198,10 +198,15 @@ internal static class JackNative
     public static extern IntPtr jack_port_get_buffer(IntPtr port, uint frames);
 
     [DllImport("jack", CallingConvention = CallingConvention.Cdecl)]
-    public static extern string jack_port_name(IntPtr port);
+    private static extern IntPtr jack_port_name(IntPtr port);
 
     [DllImport("jack", CallingConvention = CallingConvention.Cdecl)]
     public static extern int jack_connect(IntPtr client, string sourcePort, string destinationPort);
+
+    public static string PortName(IntPtr port)
+    {
+        return Marshal.PtrToStringAnsi(jack_port_name(port)) ?? string.Empty;
+    }
 
     public static void Check(int result, string operation)
     {

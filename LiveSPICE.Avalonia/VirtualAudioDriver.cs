@@ -10,7 +10,7 @@ public sealed class VirtualAudioDriver : Audio.Driver
         devices.Add(new VirtualAudioDevice());
     }
 
-    public override string Name => "Virtual Audio";
+    public override string Name => "LiveSPICE Virtual Audio";
 }
 
 internal sealed class VirtualAudioChannel : Audio.Channel

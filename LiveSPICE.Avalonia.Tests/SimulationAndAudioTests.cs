@@ -34,7 +34,7 @@ public sealed class SimulationAndAudioTests
         VirtualAudioDriver driver = new VirtualAudioDriver();
         Audio.Device device = driver.Devices.Single();
 
-        Assert.Equal("Virtual Audio", driver.Name);
+        Assert.Equal("LiveSPICE Virtual Audio", driver.Name);
         Assert.Equal("Managed loopback", device.Name);
         Assert.Single(device.InputChannels);
         Assert.Single(device.OutputChannels);
@@ -48,6 +48,17 @@ public sealed class SimulationAndAudioTests
         Assert.Equal("PipeWire/JACK", driver.Name);
         foreach (Audio.Device device in driver.Devices)
             Assert.DoesNotContain(device.InputChannels.Concat(device.OutputChannels), i => i.Name.StartsWith("Midi-Bridge:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AvaloniaAudioDriversListsLinuxAndVirtualDriversOnce()
+    {
+        Audio.Driver[] drivers = AvaloniaAudioDrivers.Available().ToArray();
+        string[] names = drivers.Select(i => i.Name).ToArray();
+
+        Assert.Contains("PipeWire/JACK", names);
+        Assert.Contains("LiveSPICE Virtual Audio", names);
+        Assert.Equal(names.Length, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
     [Fact]
