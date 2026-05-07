@@ -4,6 +4,8 @@ This is the Linux-native plugin target for hosts such as Carla, Ardour, and REAP
 
 The current plugin is a mono MXR Phase 90-style phaser with `Speed` and `Trimmer` controls. It builds to a real Linux ELF shared object, unlike the AudioPlugSharp `.vst3` bridge that is Windows-only.
 
+It also exposes an LV2 state interface with a `https://livespice.org/ns/plugin#schematicPath` property. That is the Linux-native state hook needed for the generic LiveSPICE model where hosts save/restore the selected `.schx` path, matching the Windows plugin's program-state design. The current DSP is still the built-in phaser; wiring arbitrary `.schx` simulation into the native plugin is the next engine bridge step.
+
 ## Build
 
 ```bash

@@ -3,14 +3,18 @@
 @prefix lv2: <http://lv2plug.in/ns/lv2core#> .
 @prefix pprops: <http://lv2plug.in/ns/ext/port-props#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix state: <http://lv2plug.in/ns/ext/state#> .
 @prefix units: <http://lv2plug.in/ns/extensions/units#> .
+@prefix livespice: <https://livespice.org/ns/plugin#> .
 
 <https://livespice.org/plugins/mxr-phase90>
     a lv2:Plugin , lv2:PhaserPlugin ;
     doap:name "LiveSPICE MXR Phase 90" ;
     doap:license <https://opensource.org/licenses/MIT> ;
     doap:maintainer [ foaf:name "LiveSPICE" ] ;
+    lv2:extensionData state:interface ;
     lv2:optionalFeature lv2:hardRTCapable ;
+    livespice:schematicPath "" ;
     lv2:port [
         a lv2:InputPort , lv2:ControlPort ;
         lv2:index 0 ;

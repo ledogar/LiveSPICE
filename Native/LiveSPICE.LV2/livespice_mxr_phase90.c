@@ -4,8 +4,12 @@
 #include <string.h>
 
 #include <lv2/core/lv2.h>
+#include <lv2/atom/atom.h>
+#include <lv2/state/state.h>
+#include <lv2/urid/urid.h>
 
 #define LIVESPICE_MXR_PHASE90_URI "https://livespice.org/plugins/mxr-phase90"
+#define LIVESPICE__schematicPath "https://livespice.org/ns/plugin#schematicPath"
 
 #define MIN_RATE_HZ 0.05f
 #define MAX_RATE_HZ 8.0f
@@ -29,6 +33,10 @@ typedef struct {
     float phase;
     float x1[STAGE_COUNT];
     float y1[STAGE_COUNT];
+    char* schematic_path;
+    LV2_URID_Map* map;
+    LV2_URID atom_path;
+    LV2_URID schematic_path_key;
 } LiveSpiceMxrPhase90;
 
 static float clampf(float value, float min, float max)
@@ -44,11 +52,19 @@ static LV2_Handle instantiate(const LV2_Descriptor* descriptor, double sample_ra
 {
     (void)descriptor;
     (void)bundle_path;
-    (void)features;
 
     LiveSpiceMxrPhase90* self = (LiveSpiceMxrPhase90*)calloc(1, sizeof(LiveSpiceMxrPhase90));
-    if (self != NULL)
+    if (self != NULL) {
         self->sample_rate = sample_rate;
+        for (const LV2_Feature* const* feature = features; feature != NULL && *feature != NULL; feature++) {
+            if (strcmp((*feature)->URI, LV2_URID__map) == 0)
+                self->map = (LV2_URID_Map*)(*feature)->data;
+        }
+        if (self->map != NULL) {
+            self->atom_path = self->map->map(self->map->handle, LV2_ATOM__Path);
+            self->schematic_path_key = self->map->map(self->map->handle, LIVESPICE__schematicPath);
+        }
+    }
     return (LV2_Handle)self;
 }
 
@@ -125,12 +141,66 @@ static void deactivate(LV2_Handle instance)
 
 static void cleanup(LV2_Handle instance)
 {
+    LiveSpiceMxrPhase90* self = (LiveSpiceMxrPhase90*)instance;
+    free(self->schematic_path);
     free(instance);
 }
 
+static LV2_State_Status save_state(LV2_Handle instance, LV2_State_Store_Function store, LV2_State_Handle handle, uint32_t flags, const LV2_Feature* const* features)
+{
+    (void)flags;
+    (void)features;
+
+    LiveSpiceMxrPhase90* self = (LiveSpiceMxrPhase90*)instance;
+    if (self->schematic_path_key == 0 || self->atom_path == 0 || self->schematic_path == NULL || self->schematic_path[0] == '\0')
+        return LV2_STATE_SUCCESS;
+
+    return store(
+        handle,
+        self->schematic_path_key,
+        self->schematic_path,
+        strlen(self->schematic_path) + 1,
+        self->atom_path,
+        LV2_STATE_IS_POD);
+}
+
+static LV2_State_Status restore_state(LV2_Handle instance, LV2_State_Retrieve_Function retrieve, LV2_State_Handle handle, uint32_t flags, const LV2_Feature* const* features)
+{
+    (void)flags;
+    (void)features;
+
+    LiveSpiceMxrPhase90* self = (LiveSpiceMxrPhase90*)instance;
+    if (self->schematic_path_key == 0)
+        return LV2_STATE_ERR_NO_FEATURE;
+
+    size_t size = 0;
+    uint32_t type = 0;
+    uint32_t value_flags = 0;
+    const void* value = retrieve(handle, self->schematic_path_key, &size, &type, &value_flags);
+    if (value == NULL || size == 0)
+        return LV2_STATE_SUCCESS;
+    if (type != self->atom_path)
+        return LV2_STATE_ERR_BAD_TYPE;
+
+    char* restored = (char*)calloc(size + 1, sizeof(char));
+    if (restored == NULL)
+        return LV2_STATE_ERR_NO_SPACE;
+    memcpy(restored, value, size);
+
+    free(self->schematic_path);
+    self->schematic_path = restored;
+    return LV2_STATE_SUCCESS;
+}
+
+static const LV2_State_Interface state_interface = {
+    save_state,
+    restore_state
+};
+
 static const void* extension_data(const char* uri)
 {
-    (void)uri;
+    if (strcmp(uri, LV2_STATE__interface) == 0)
+        return &state_interface;
     return NULL;
 }
 
