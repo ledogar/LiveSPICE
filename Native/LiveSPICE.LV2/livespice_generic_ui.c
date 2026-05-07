@@ -444,17 +444,17 @@ static gboolean draw_knob(GtkWidget* widget, cairo_t* cr, gpointer data)
     cairo_line_to(cr, center + cos(angle) * indicator_outer, center + sin(angle) * indicator_outer);
     cairo_stroke(cr);
 
-    cairo_set_font_size(cr, 9.5);
+    cairo_set_font_size(cr, 11.5);
     for (int i = 0; i < 5; i++) {
         double tick_angle = knob_angle_for_value(label_values[i]);
         const char* label = knob_scale_label(knob->scale, i);
         cairo_text_extents_t extents;
         cairo_text_extents(cr, label, &extents);
-        double label_radius = radius + 10.5;
+        double label_radius = radius + 11.2;
         double label_x = center + cos(tick_angle) * label_radius - (extents.width / 2.0) - extents.x_bearing;
         double label_y = center + sin(tick_angle) * label_radius + (extents.height / 2.0);
         if (i == 2)
-            label_y = 9.0 + extents.height;
+            label_y = 2.0 + extents.height;
 
         cairo_set_source_rgba(cr, 1, 1, 1, 0.78);
         cairo_move_to(cr, label_x + 1, label_y + 1);
