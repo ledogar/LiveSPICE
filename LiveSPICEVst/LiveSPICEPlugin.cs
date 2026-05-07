@@ -10,7 +10,6 @@ using System.Windows.Controls;
 using System.Xml.Serialization;
 using AudioPlugSharp;
 using AudioPlugSharpWPF;
-using LiveSPICE.PluginCore;
 
 namespace LiveSPICEVst
 {
@@ -80,8 +79,32 @@ namespace LiveSPICEVst
         {
             byte[] stateData = null;
 
-            PluginProgramParameters programParameters = PluginProgramParameters.FromProcessor(SimulationProcessor);
-            XmlSerializer serializer = new XmlSerializer(typeof(PluginProgramParameters));
+            VstProgramParameters programParameters = new VstProgramParameters
+            {
+                SchematicPath = SimulationProcessor.SchematicPath,
+                OverSample = SimulationProcessor.Oversample,
+                Iterations = SimulationProcessor.Iterations
+            };
+
+            foreach (var wrapper in SimulationProcessor.InteractiveComponents)
+            {
+                switch (wrapper)
+                {
+                    case PotWrapper potWrapper:
+                        programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = potWrapper.PotValue });
+                        break;
+
+                    case DoubleThrowWrapper doubleThrowWrapper:
+                        programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = doubleThrowWrapper.Engaged ? 1 : 0 });
+                        break;
+
+                    case MultiThrowWrapper multiThrowWrapper:
+                        programParameters.ControlParameters.Add(new VSTProgramControlParameter { Name = wrapper.Name, Value = multiThrowWrapper.Position });
+                        break;
+                }
+             }
+
+            XmlSerializer serializer = new XmlSerializer(typeof(VstProgramParameters));
 
             using (MemoryStream memoryStream = new MemoryStream())
             {
@@ -99,13 +122,13 @@ namespace LiveSPICEVst
         /// <param name="stateData">Byte array of data to restore</param>
         public override void RestoreState(byte[] stateData)
         {
-            XmlSerializer serializer = new XmlSerializer(typeof(PluginProgramParameters));
+            XmlSerializer serializer = new XmlSerializer(typeof(VstProgramParameters));
 
             try
             {
                 using (MemoryStream memoryStream = new MemoryStream(stateData))
                 {
-                    PluginProgramParameters programParameters = serializer.Deserialize(memoryStream) as PluginProgramParameters;
+                    VstProgramParameters programParameters = serializer.Deserialize(memoryStream) as VstProgramParameters;
 
                     if (string.IsNullOrEmpty(programParameters.SchematicPath))
                     {
@@ -118,7 +141,31 @@ namespace LiveSPICEVst
                         LoadSchematic(programParameters.SchematicPath);
                     }
 
-                    programParameters.ApplyTo(SimulationProcessor);
+                    SimulationProcessor.Oversample = programParameters.OverSample;
+                    SimulationProcessor.Iterations = programParameters.Iterations;
+
+                    foreach (VSTProgramControlParameter controlParameter in programParameters.ControlParameters)
+                    {
+                        var wrapper = SimulationProcessor.InteractiveComponents.Where(i => i.Name == controlParameter.Name).SingleOrDefault();
+
+                        if (wrapper != null)
+                        {
+                            switch (wrapper)
+                            {
+                                case PotWrapper potWrapper:
+                                    potWrapper.PotValue = controlParameter.Value;
+                                    break;
+
+                                case DoubleThrowWrapper doubleThrowWrapper:
+                                    doubleThrowWrapper.Engaged = (controlParameter.Value == 1);
+                                    break;
+
+                                case MultiThrowWrapper multiThrowWrapper:
+                                    multiThrowWrapper.Position = (int)controlParameter.Value;
+                                    break;
+                            }
+                        }
+                    }
 
                     if (EditorView != null)
                         EditorView.UpdateSchematic();
