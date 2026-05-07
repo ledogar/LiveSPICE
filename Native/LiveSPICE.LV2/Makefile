@@ -8,11 +8,12 @@ MXR_PLUGIN := $(BUNDLE)/livespice_mxr_phase90.so
 GENERIC_PLUGIN := $(BUNDLE)/livespice_generic.so
 GENERIC_UI := $(BUNDLE)/livespice_generic_ui.so
 TTL := $(BUNDLE)/manifest.ttl $(BUNDLE)/livespice_mxr_phase90.ttl $(BUNDLE)/livespice_generic.ttl
+ASSETS := $(BUNDLE)/MetalAlpha.png
 PREFIX ?= $(HOME)/.lv2
 
 .PHONY: all install clean test
 
-all: $(MXR_PLUGIN) $(GENERIC_PLUGIN) $(GENERIC_UI) $(TTL)
+all: $(MXR_PLUGIN) $(GENERIC_PLUGIN) $(GENERIC_UI) $(TTL) $(ASSETS)
 
 $(BUNDLE):
 	mkdir -p $(BUNDLE)
@@ -33,6 +34,9 @@ $(BUNDLE)/livespice_mxr_phase90.ttl: livespice_mxr_phase90.ttl | $(BUNDLE)
 	cp $< $@
 
 $(BUNDLE)/livespice_generic.ttl: livespice_generic.ttl | $(BUNDLE)
+	cp $< $@
+
+$(BUNDLE)/MetalAlpha.png: ../../LiveSPICEVst/Images/MetalAlpha.png | $(BUNDLE)
 	cp $< $@
 
 install: all

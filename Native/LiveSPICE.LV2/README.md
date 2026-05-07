@@ -4,7 +4,7 @@ This is the Linux-native plugin target for hosts such as Carla, Ardour, and REAP
 
 The bundle currently contains two native LV2 plugins:
 
-- `LiveSPICE Generic`: a generic LiveSPICE LV2 shell with mono input/output, `schematicPath` state support, and a GTK3 `Load Schematic` UI. Loading a `.schx` updates the UI with discovered potentiometer and switch controls, and `Clear` resets the loaded schematic and control panel. It currently passes audio through until the managed LiveSPICE simulation engine is bridged into the native LV2 runtime.
+- `LiveSPICE Generic`: a generic LiveSPICE LV2 shell with mono input/output, `schematicPath` state support, and a GTK3 `Load Schematic` UI styled after the Windows VST metal panel. Loading a `.schx` updates the UI with discovered potentiometer and switch controls, and `Clear` resets the loaded schematic and control panel. It currently passes audio through until the managed LiveSPICE simulation engine is bridged into the native LV2 runtime.
 - `LiveSPICE MXR Phase 90`: a mono MXR Phase 90-style phaser with `Speed` and `Trimmer` controls.
 
 Both build to real Linux ELF shared objects, unlike the AudioPlugSharp `.vst3` bridge that is Windows-only.
