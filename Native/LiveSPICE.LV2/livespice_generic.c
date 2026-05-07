@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <lv2/atom/atom.h>
+#include <lv2/atom/util.h>
 #include <lv2/core/lv2.h>
 #include <lv2/state/state.h>
 #include <lv2/urid/urid.h>
@@ -12,15 +13,18 @@
 
 typedef enum {
     PORT_INPUT = 0,
-    PORT_OUTPUT = 1
+    PORT_OUTPUT = 1,
+    PORT_CONTROL_EVENTS = 2
 } PortIndex;
 
 typedef struct {
     const float* input;
     float* output;
+    const LV2_Atom_Sequence* control_events;
     char* schematic_path;
     LV2_URID_Map* map;
     LV2_URID atom_path;
+    LV2_URID atom_string;
     LV2_URID schematic_path_key;
 } LiveSpiceGeneric;
 
@@ -33,7 +37,39 @@ static void map_features(LiveSpiceGeneric* self, const LV2_Feature* const* featu
 
     if (self->map != NULL) {
         self->atom_path = self->map->map(self->map->handle, LV2_ATOM__Path);
+        self->atom_string = self->map->map(self->map->handle, LV2_ATOM__String);
         self->schematic_path_key = self->map->map(self->map->handle, LIVESPICE__schematicPath);
+    }
+}
+
+static void set_schematic_path(LiveSpiceGeneric* self, const char* path, uint32_t size)
+{
+    if (path == NULL)
+        return;
+
+    char* copy = (char*)calloc((size_t)size + 1, sizeof(char));
+    if (copy == NULL)
+        return;
+
+    if (size > 0)
+        memcpy(copy, path, size);
+    copy[size] = '\0';
+
+    free(self->schematic_path);
+    self->schematic_path = copy;
+}
+
+static void read_control_events(LiveSpiceGeneric* self)
+{
+    if (self->control_events == NULL || self->control_events->atom.type == 0)
+        return;
+
+    LV2_ATOM_SEQUENCE_FOREACH(self->control_events, event) {
+        if (event->body.type != self->atom_path && event->body.type != self->atom_string)
+            continue;
+
+        const char* path = (const char*)LV2_ATOM_BODY(&event->body);
+        set_schematic_path(self, path, event->body.size);
     }
 }
 
@@ -59,6 +95,9 @@ static void connect_port(LV2_Handle instance, uint32_t port, void* data)
     case PORT_OUTPUT:
         self->output = (float*)data;
         break;
+    case PORT_CONTROL_EVENTS:
+        self->control_events = (const LV2_Atom_Sequence*)data;
+        break;
     }
 }
 
@@ -70,6 +109,8 @@ static void activate(LV2_Handle instance)
 static void run(LV2_Handle instance, uint32_t sample_count)
 {
     LiveSpiceGeneric* self = (LiveSpiceGeneric*)instance;
+    read_control_events(self);
+
     if (self->input == NULL || self->output == NULL)
         return;
 
@@ -124,13 +165,7 @@ static LV2_State_Status restore_state(LV2_Handle instance, LV2_State_Retrieve_Fu
     if (type != self->atom_path)
         return LV2_STATE_ERR_BAD_TYPE;
 
-    char* restored = (char*)calloc(size + 1, sizeof(char));
-    if (restored == NULL)
-        return LV2_STATE_ERR_NO_SPACE;
-    memcpy(restored, value, size);
-
-    free(self->schematic_path);
-    self->schematic_path = restored;
+    set_schematic_path(self, (const char*)value, (uint32_t)size);
     return LV2_STATE_SUCCESS;
 }
 
