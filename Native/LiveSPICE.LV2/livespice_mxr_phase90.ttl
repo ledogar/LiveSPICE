@@ -5,6 +5,7 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix state: <http://lv2plug.in/ns/ext/state#> .
 @prefix units: <http://lv2plug.in/ns/extensions/units#> .
+@prefix urid: <http://lv2plug.in/ns/ext/urid#> .
 @prefix livespice: <https://livespice.org/ns/plugin#> .
 
 <https://livespice.org/plugins/mxr-phase90>
@@ -13,6 +14,7 @@
     doap:license <https://opensource.org/licenses/MIT> ;
     doap:maintainer [ foaf:name "LiveSPICE" ] ;
     lv2:extensionData state:interface ;
+    lv2:requiredFeature urid:map ;
     lv2:optionalFeature lv2:hardRTCapable ;
     livespice:schematicPath "" ;
     lv2:port [

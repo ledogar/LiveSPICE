@@ -210,7 +210,7 @@ public class SimulationProcessor
         {
             wrapper = button.NumPositions == 2
                 ? new DoubleThrowWrapper(button, button.Group)
-                : new MultiThrowWrapper(button, component.Name);
+                : new MultiThrowWrapper(button, button.Group);
             buttonGroups[button.Group] = wrapper;
             InteractiveComponents.Add(wrapper);
         }

@@ -101,9 +101,17 @@ internal sealed unsafe class JackAudioStream : Audio.Stream
         JackNative.Check(JackNative.jack_activate(client), "activate JACK client");
 
         for (int i = 0; i < input.Length; i++)
-            JackNative.jack_connect(client, input[i].Name, JackNative.PortName(inputPorts[i]));
+        {
+            string sourcePort = input[i].Name;
+            string destinationPort = JackNative.PortName(inputPorts[i]);
+            JackNative.Check(JackNative.jack_connect(client, sourcePort, destinationPort), $"connect JACK port {sourcePort} to {destinationPort}");
+        }
         for (int i = 0; i < output.Length; i++)
-            JackNative.jack_connect(client, JackNative.PortName(outputPorts[i]), output[i].Name);
+        {
+            string sourcePort = JackNative.PortName(outputPorts[i]);
+            string destinationPort = output[i].Name;
+            JackNative.Check(JackNative.jack_connect(client, sourcePort, destinationPort), $"connect JACK port {sourcePort} to {destinationPort}");
+        }
     }
 
     public override double SampleRate => sampleRate;
@@ -266,9 +274,19 @@ internal static class LinuxAudioDiscovery
                 CreateNoWindow = true
             };
             using Process process = Process.Start(startInfo)!;
-            string output = process.StandardOutput.ReadToEnd();
-            if (!process.WaitForExit(1000) || process.ExitCode != 0)
+            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> errorTask = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(1000))
+            {
+                process.Kill(true);
+                process.WaitForExit();
                 return Array.Empty<string>();
+            }
+            _ = errorTask.GetAwaiter().GetResult();
+            if (process.ExitCode != 0)
+                return Array.Empty<string>();
+
+            string output = outputTask.GetAwaiter().GetResult();
 
             return output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(i => i.Trim())

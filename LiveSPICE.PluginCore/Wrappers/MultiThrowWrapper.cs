@@ -8,6 +8,8 @@ public class MultiThrowWrapper : ComponentWrapper<IButtonControl>
     {
     }
 
+    public int NumPositions => Sections.Max(i => i.NumPositions);
+
     public int Position
     {
         get => Sections[0].Position;

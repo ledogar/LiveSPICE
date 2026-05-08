@@ -47,7 +47,7 @@ $(BUNDLE)/MetalAlpha.png: ../../LiveSPICEVst/Images/MetalAlpha.png | $(BUNDLE)
 
 install: all
 	mkdir -p $(PREFIX)
-	rm -rf $(PREFIX)/LiveSPICE-MXR-Phase90.lv2
+	rm -rf $(PREFIX)/LiveSPICE.lv2
 	cp -r $(BUNDLE) $(PREFIX)/
 
 test: all

@@ -255,7 +255,7 @@ public sealed class PluginEditorWindow : Window
                 panel.Children.Add(toggle);
                 break;
             case MultiThrowWrapper multiThrowWrapper:
-                ComboBox comboBox = CreateOptionBox(new[] { 0, 1, 2 }, multiThrowWrapper.Position);
+                ComboBox comboBox = CreateOptionBox(Enumerable.Range(0, multiThrowWrapper.NumPositions).ToArray(), multiThrowWrapper.Position);
                 comboBox.SelectionChanged += (_, _) =>
                 {
                     if (comboBox.SelectedItem is int position)

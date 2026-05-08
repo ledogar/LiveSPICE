@@ -509,7 +509,16 @@ static gboolean knob_motion(GtkWidget* widget, GdkEventMotion* event, gpointer d
 static gboolean knob_scroll(GtkWidget* widget, GdkEventScroll* event, gpointer data)
 {
     KnobControl* knob = (KnobControl*)data;
-    double delta = event->direction == GDK_SCROLL_UP ? 0.025 : -0.025;
+    double delta = 0.0;
+    if (event->direction == GDK_SCROLL_UP)
+        delta = 0.025;
+    else if (event->direction == GDK_SCROLL_DOWN)
+        delta = -0.025;
+    else if (event->direction == GDK_SCROLL_SMOOTH)
+        delta = fmax(-0.1, fmin(0.1, -event->delta_y * 0.025));
+    else
+        return false;
+
     knob->value = clamp_unit(knob->value + delta);
     gtk_widget_queue_draw(widget);
     return true;
@@ -607,11 +616,18 @@ static void send_schematic_path(LiveSpiceGenericUi* self, const char* path)
 
     uint8_t buffer[4096];
     lv2_atom_forge_set_buffer(&self->forge, buffer, sizeof(buffer));
-    LV2_Atom_Forge_Ref ref = lv2_atom_forge_path(&self->forge, path, (uint32_t)strlen(path) + 1);
-    if (ref == 0)
+
+    LV2_Atom_Forge_Frame sequence_frame;
+    LV2_Atom_Forge_Ref sequence_ref = lv2_atom_forge_sequence_head(&self->forge, &sequence_frame, 0);
+    if (sequence_ref == 0)
         return;
 
-    LV2_Atom* atom = lv2_atom_forge_deref(&self->forge, ref);
+    lv2_atom_forge_frame_time(&self->forge, 0);
+    if (lv2_atom_forge_path(&self->forge, path, (uint32_t)strlen(path) + 1) == 0)
+        return;
+
+    lv2_atom_forge_pop(&self->forge, &sequence_frame);
+    LV2_Atom* atom = lv2_atom_forge_deref(&self->forge, sequence_ref);
     self->write(self->controller, PORT_CONTROL_EVENTS, lv2_atom_total_size(atom), self->atom_event_transfer, atom);
 }
 
