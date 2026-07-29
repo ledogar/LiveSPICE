@@ -114,20 +114,18 @@ public class SimulationProcessor
             throw toThrow;
         }
 
-        if (simulation == null && needRebuild && circuit != null)
+        if (circuit == null)
         {
-            UpdateSimulation();
-            needRebuild = false;
-        }
-
-        if (circuit == null || simulation == null)
-        {
-            audioInputs[0].CopyTo(audioOutputs[0], 0);
+            Bypass(audioInputs, audioOutputs, numSamples);
             return;
         }
 
         lock (sync)
         {
+            // This scan must run even while bypassed. It is the only route by which a control
+            // change reaches needRebuild, so if it sat below the bypass return, a simulation that
+            // had been dropped (a divergence, a failed build) could never be revived by turning a
+            // pot down - the one thing a player would naturally try.
             foreach (IComponentWrapper component in InteractiveComponents)
             {
                 if (component.NeedUpdate)
@@ -146,7 +144,9 @@ public class SimulationProcessor
 
             if (needUpdate || needRebuild)
             {
-                if (needRebuild || updateSamplesElapsed > delayUpdateSamples)
+                // With no simulation there is nothing to debounce against - rebuild immediately so
+                // a bypassed processor recovers on the first control change.
+                if (needRebuild || simulation == null || updateSamplesElapsed > delayUpdateSamples)
                 {
                     UpdateSimulation();
                     needRebuild = false;
@@ -156,6 +156,12 @@ public class SimulationProcessor
                 {
                     updateSamplesElapsed += numSamples;
                 }
+            }
+
+            if (simulation == null)
+            {
+                Bypass(audioInputs, audioOutputs, numSamples);
+                return;
             }
 
             try
@@ -175,6 +181,20 @@ public class SimulationProcessor
                 if (retry)
                     needRebuild = true;
             }
+        }
+    }
+
+    /// <summary>
+    /// Pass the input through unprocessed. Every output channel is written, so a host with more
+    /// outputs than the simulation drives does not keep replaying a stale buffer.
+    /// </summary>
+    private static void Bypass(double[][] audioInputs, double[][] audioOutputs, int numSamples)
+    {
+        for (int channel = 0; channel < audioOutputs.Length; ++channel)
+        {
+            double[] source = channel < audioInputs.Length ? audioInputs[channel] : audioInputs[0];
+            // Copy numSamples, not the whole array: the two need not be the same length.
+            Array.Copy(source, audioOutputs[channel], Math.Min(numSamples, Math.Min(source.Length, audioOutputs[channel].Length)));
         }
     }
 
@@ -266,7 +286,18 @@ public class SimulationProcessor
     {
         TransientSolution solution = AudioSimulationFactory.Solve(circuit!, sampleRate, oversample);
         Simulation built = AudioSimulationFactory.Create(circuit!, solution, oversample, iterations);
-        built.Run(1, new[] { new double[1] }, new[] { new double[1] });
+        try
+        {
+            built.Run(1, new[] { new double[1] }, new[] { new double[1] });
+        }
+        catch (SimulationDiverged)
+        {
+            // The divergence guard also fires on sample 0, so a circuit with a bad DC operating
+            // point throws here. Swallow it: the compile is what we came for, and the guard will
+            // fire again during real playback where RunSimulation's policy can handle it. Letting
+            // it escape would surface as a build failure rethrown into the audio callback,
+            // bypassing that policy entirely.
+        }
         built.Reset();
         return built;
     }
@@ -274,8 +305,13 @@ public class SimulationProcessor
     /// <summary>
     /// Swap in a built simulation, carrying the running state over so the circuit does not reset
     /// (capacitors keep their charge, the sample clock keeps counting) when a control changes.
-    /// The lock only covers the state copy and the reference swap, so the audio thread is never
-    /// blocked behind a solve or a compile.
+    /// The solve and the compile happen before this, off the audio thread; the lock here covers
+    /// only the state copy and the reference swap. Note the copy is not free - it is proportional
+    /// to the number of state variables - so the audio thread can briefly wait on it.
+    ///
+    /// A sample rate or oversample change alters the time step, which no state can survive; in
+    /// that case the new simulation deliberately starts from its initial conditions rather than
+    /// inheriting a sample clock that would place it at the wrong instant.
     /// </summary>
     private void Publish(Simulation built, int id)
     {
@@ -284,12 +320,18 @@ public class SimulationProcessor
             if (id <= clock)
                 return;
 
-            if (simulation != null)
-                built.CopyStateFrom(simulation);
+            if (simulation != null && !built.CopyStateFrom(simulation))
+                StateHandoffSkipped = true;
             simulation = built;
             clock = id;
         }
     }
+
+    /// <summary>
+    /// Set when a rebuild could not carry the previous simulation's state across, which means the
+    /// circuit restarted from its initial conditions and a transient is expected.
+    /// </summary>
+    public bool StateHandoffSkipped { get; private set; }
 
     private void UpdateSimulation()
     {
