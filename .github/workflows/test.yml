@@ -64,3 +64,15 @@ jobs:
       - name: Run examples
         working-directory: Tests
         run: dotnet run -c Release --framework net8.0 --no-build test "Examples/*.schx" --check --sampleRate 44100
+      # The live audio path needs a device, which CI runners don't have. The offline render path
+      # exercises schematic load, solve, codegen and the buffer loop without one.
+      - name: List audio devices
+        working-directory: LiveSPICE.CLI
+        run: dotnet run -c Release --no-build -- list
+      - name: Render a circuit offline
+        working-directory: LiveSPICE.CLI
+        run: |
+          dotnet run -c Release --no-build -- tone --output /tmp/tone.wav --frequency 82 --seconds 1
+          dotnet run -c Release --no-build -- render \
+            --schematic "../Tests/Examples/Passive 1stOrder Lowpass RC.schx" \
+            --input /tmp/tone.wav --output /tmp/out.wav

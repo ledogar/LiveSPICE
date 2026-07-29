@@ -15,6 +15,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ComputerAlgebra", "Computer
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{65D2D24A-A83D-4029-8B83-D01EBC5376BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CoreAudio", "CoreAudio\CoreAudio.csproj", "{4390E359-D8F9-4E52-B6A4-81702142DCF9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveSPICE.CLI", "LiveSPICE.CLI\LiveSPICE.CLI.csproj", "{205382E5-A209-4DB7-B69C-B1C1888FA254}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,6 +48,14 @@ Global
 		{65D2D24A-A83D-4029-8B83-D01EBC5376BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{65D2D24A-A83D-4029-8B83-D01EBC5376BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{65D2D24A-A83D-4029-8B83-D01EBC5376BC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4390E359-D8F9-4E52-B6A4-81702142DCF9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4390E359-D8F9-4E52-B6A4-81702142DCF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4390E359-D8F9-4E52-B6A4-81702142DCF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4390E359-D8F9-4E52-B6A4-81702142DCF9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{205382E5-A209-4DB7-B69C-B1C1888FA254}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{205382E5-A209-4DB7-B69C-B1C1888FA254}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{205382E5-A209-4DB7-B69C-B1C1888FA254}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{205382E5-A209-4DB7-B69C-B1C1888FA254}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{9332C261-5996-4BDD-8878-068B9B147C3D} = {108ADBE6-64C1-41C7-99CE-9B5B47061BE0}
