@@ -18,8 +18,9 @@ namespace Tests
                                                     .WithArgument<string>("pattern", "Glob pattern for files to test")
                                                     .WithOption<bool>(new[] { "--plot" }, "Plot results")
                                                     .WithOption<bool>(new[] { "--stats" }, "Write statistics")
+                                                    .WithOption<bool>(new[] { "--check" }, "Check results against saved statistics (use --sampleRate 44100, the rate the baselines were generated at)")
                                                     .WithOption(new[] { "--samples" }, () => 4800, "Samples")
-                                                    .WithHandler(CommandHandler.Create<string, bool, bool, int, int, int, int>(Test)))
+                                                    .WithHandler(CommandHandler.Create<string, bool, bool, bool, int, int, int, int>(Test)))
                                                .WithCommand("benchmark", "Run benchmarks", c => c
                                                     .WithArgument<string>("pattern", "Glob pattern for files to benchmark")
                                                     .WithHandler(CommandHandler.Create<string, int, int, int>(Benchmark)))
@@ -27,10 +28,13 @@ namespace Tests
                                                .WithGlobalOption(new Option<int>("--oversample", () => 8, "Oversample"))
                                                .WithGlobalOption(new Option<int>("--iterations", () => 8, "Iterations"));
 
-            return await rootCommand.InvokeAsync(args);
+            int result = await rootCommand.InvokeAsync(args);
+            return result != 0 ? result : (checkFailures > 0 ? 1 : 0);
         }
 
-        public static void Test(string pattern, bool plot, bool stats, int sampleRate, int samples, int oversample, int iterations)
+        private static int checkFailures = 0;
+
+        public static void Test(string pattern, bool plot, bool stats, bool check, int sampleRate, int samples, int oversample, int iterations)
         {
             var log = new ConsoleLog() { Verbosity = MessageType.Info };
             var tester = new Test();
@@ -38,10 +42,21 @@ namespace Tests
             foreach (var circuit in GetCircuits(pattern, log))
             {
                 var outputs = tester.Run(circuit, t => Harmonics(t, 0.5, 82, 2), sampleRate, samples, oversample, iterations);
+                if (check)
+                {
+                    checkFailures += tester.CheckStatistics(circuit.Name, outputs, log);
+                }
+#if PLOTTING
                 if (plot)
                 {
                     tester.PlotAll(circuit.Name, outputs);
                 }
+#else
+                if (plot)
+                {
+                    log.WriteLine(MessageType.Warning, "--plot is not supported on this platform (requires System.Drawing/WinForms); ignoring.");
+                }
+#endif
                 if (stats)
                 {
                     tester.WriteStatistics(circuit.Name, outputs);
