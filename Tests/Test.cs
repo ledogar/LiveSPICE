@@ -202,14 +202,23 @@ namespace Tests
         private const string StatsColumns = "{0}, {1:G5}, {2:G5}, {3:G5}";
 
         /// <summary>
-        /// Snap statistics that are negligible against the variable's own range to zero. The mean
-        /// of a symmetric signal is a cancellation residual near zero, and printing five
-        /// significant figures of it just publishes floating-point noise: a floating node whose
-        /// true mean is zero otherwise differs between platforms in every digit.
+        /// Round the mean to a precision set by the signal's own envelope rather than by its own
+        /// magnitude.
+        ///
+        /// min and max are order-of-scale quantities, so five significant figures of them is about
+        /// 1e-5 relative - comfortably above the last-digit drift between platforms. The mean is
+        /// not: for an AC signal it is a cancellation residual near zero, so five significant
+        /// figures of it resolves far below the precision it actually carries, and publishes
+        /// floating-point noise. Quantizing to 1e-4 of the envelope keeps ample resolution to
+        /// catch a real regression - which moves the mean by orders of magnitude more - while
+        /// being immune to a platform disagreeing in the last digit.
         /// </summary>
-        private static double Denoise(double Value, double Scale)
+        private static double QuantizeMean(double Mean, double Scale)
         {
-            return Math.Abs(Value) < Scale * 1e-6 ? 0.0 : Value;
+            if (Scale <= 0)
+                return 0.0;
+            double step = Scale * 1e-4;
+            return Math.Round(Mean / step) * step;
         }
 
         private static string StatsToString(Dictionary<Expression, List<double>> Outputs, int Warmup)
@@ -220,7 +229,7 @@ namespace Tests
             {
                 double scale = Math.Max(Math.Abs(i.Value[1]), Math.Abs(i.Value[2]));
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture, StatsColumns,
-                    i.Key, Denoise(i.Value[0], scale), Denoise(i.Value[1], scale), Denoise(i.Value[2], scale)));
+                    i.Key, QuantizeMean(i.Value[0], scale), i.Value[1], i.Value[2]));
             }
             return sb.ToString();
         }
