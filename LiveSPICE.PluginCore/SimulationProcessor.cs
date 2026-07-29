@@ -80,12 +80,20 @@ public class SimulationProcessor
         }
     }
 
+    /// <summary>True once a simulation has been built and published; until then RunSimulation bypasses.</summary>
+    public bool SimulationReady => simulation != null;
+
     public void LoadSchematic(string path)
     {
-        Schematic newSchematic = Circuit.Schematic.Load(path);
-        Circuit.Circuit newCircuit = newSchematic.Build();
+        SetSchematic(Circuit.Schematic.Load(path), path);
+    }
+
+    /// <summary>Use an already-loaded schematic, e.g. one being edited in memory.</summary>
+    public void SetSchematic(Schematic schematic, string path = "")
+    {
+        Circuit.Circuit newCircuit = schematic.Build();
         SetCircuit(newCircuit);
-        Schematic = newSchematic;
+        Schematic = schematic;
         SchematicPath = path;
     }
 
@@ -108,7 +116,7 @@ public class SimulationProcessor
 
         if (simulation == null && needRebuild && circuit != null)
         {
-            UpdateSimulation(needRebuild);
+            UpdateSimulation();
             needRebuild = false;
         }
 
@@ -140,7 +148,7 @@ public class SimulationProcessor
             {
                 if (needRebuild || updateSamplesElapsed > delayUpdateSamples)
                 {
-                    UpdateSimulation(needRebuild);
+                    UpdateSimulation();
                     needRebuild = false;
                     needUpdate = false;
                 }
@@ -150,8 +158,40 @@ public class SimulationProcessor
                 }
             }
 
-            simulation.Run(numSamples, audioInputs, audioOutputs);
+            try
+            {
+                simulation.Run(numSamples, audioInputs, audioOutputs);
+            }
+            catch (SimulationDiverged diverged)
+            {
+                // The circuit hit a NaN/Inf. Mirror the WPF app's policy: divergence after more
+                // than a second of audio is likely a transient, so rebuild and keep going;
+                // divergence almost immediately means the circuit is genuinely unstable, so stay
+                // bypassed rather than thrash rebuilding every buffer.
+                foreach (double[] channel in audioOutputs)
+                    Array.Clear(channel, 0, numSamples);
+                bool retry = diverged.At > sampleRate;
+                simulation = null;
+                if (retry)
+                    needRebuild = true;
+            }
         }
+    }
+
+    /// <summary>
+    /// Build and publish the simulation synchronously. Offline rendering needs this (RunSimulation
+    /// bypasses until a simulation exists), and live hosts can call it before starting the stream
+    /// so the first audio callback finds the simulation compiled and ready.
+    /// </summary>
+    public void EnsureSimulationReady()
+    {
+        if (circuit == null)
+            return;
+
+        int id = Interlocked.Increment(ref update);
+        Publish(BuildSimulation(), id);
+        needRebuild = false;
+        needUpdate = false;
     }
 
     private void SetCircuit(Circuit.Circuit newCircuit)
@@ -216,7 +256,42 @@ public class SimulationProcessor
         }
     }
 
-    private void UpdateSimulation(bool rebuild)
+    /// <summary>
+    /// Build a simulation for the current circuit and settings, compiled and reset. Runs off the
+    /// audio thread: Simulation compiles its inner loop lazily on first Run, a multi-millisecond
+    /// stall if left to the audio callback. Warm it with one scratch sample to force the compile,
+    /// then Reset so a freshly built simulation starts from the solution's initial conditions.
+    /// </summary>
+    private Simulation BuildSimulation()
+    {
+        TransientSolution solution = AudioSimulationFactory.Solve(circuit!, sampleRate, oversample);
+        Simulation built = AudioSimulationFactory.Create(circuit!, solution, oversample, iterations);
+        built.Run(1, new[] { new double[1] }, new[] { new double[1] });
+        built.Reset();
+        return built;
+    }
+
+    /// <summary>
+    /// Swap in a built simulation, carrying the running state over so the circuit does not reset
+    /// (capacitors keep their charge, the sample clock keeps counting) when a control changes.
+    /// The lock only covers the state copy and the reference swap, so the audio thread is never
+    /// blocked behind a solve or a compile.
+    /// </summary>
+    private void Publish(Simulation built, int id)
+    {
+        lock (sync)
+        {
+            if (id <= clock)
+                return;
+
+            if (simulation != null)
+                built.CopyStateFrom(simulation);
+            simulation = built;
+            clock = id;
+        }
+    }
+
+    private void UpdateSimulation()
     {
         int id = Interlocked.Increment(ref update);
         new Task(() =>
@@ -226,23 +301,7 @@ public class SimulationProcessor
                 if (circuit == null)
                     return;
 
-                TransientSolution solution = AudioSimulationFactory.Solve(circuit, sampleRate, oversample);
-                lock (sync)
-                {
-                    if (id <= clock)
-                        return;
-
-                    if (rebuild || simulation == null)
-                    {
-                        simulation = AudioSimulationFactory.Create(circuit, solution, oversample, iterations);
-                    }
-                    else
-                    {
-                        simulation.Solution = solution;
-                    }
-
-                    clock = id;
-                }
+                Publish(BuildSimulation(), id);
             }
             catch (Exception ex)
             {
