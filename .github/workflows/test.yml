@@ -76,3 +76,9 @@ jobs:
           dotnet run -c Release --no-build -- render \
             --schematic "../Tests/Examples/Passive 1stOrder Lowpass RC.schx" \
             --input /tmp/tone.wav --output /tmp/out.wav
+      # The Avalonia GUI and its tests run headless (Avalonia.Headless.XUnit), so they work on
+      # runners with no display or audio hardware.
+      - name: Build Avalonia GUI
+        run: dotnet build LiveSPICE.Linux.sln -c Release
+      - name: Run Avalonia tests
+        run: dotnet test LiveSPICE.Avalonia.Tests/LiveSPICE.Avalonia.Tests.csproj -c Release --no-build
