@@ -29,16 +29,15 @@ jobs:
         shell: pwsh
         working-directory: LiveSPICEVst
         run: dotnet publish -c Release --framework net8.0-windows /p:DebugType=None /p:UseSharedCompilation=false  /p:UseRazorBuildServer=false
-      # --check asserts results against Tests/Stats/*.csv; --sampleRate 44100 because
-      # that is the configuration the committed baselines were generated with.
+      # Checking against Tests/Stats/*.csv is unconditional; --updateGolden regenerates.
       - name: Run circuit tests
         shell: pwsh
         working-directory: Tests
-        run: dotnet run -c Release --framework net6.0-windows test "Circuits\*.schx" --check --sampleRate 44100
+        run: dotnet run -c Release --framework net6.0-windows test "Circuits\*.schx"
       - name: Run examples
         shell: pwsh
         working-directory: Tests
-        run: dotnet run -c Release --framework net6.0-windows test "Examples\*.schx" --check --sampleRate 44100
+        run: dotnet run -c Release --framework net6.0-windows test "Examples\*.schx"
 
   test-macos:
     name: Test (macOS)
@@ -56,14 +55,13 @@ jobs:
       # portable subset (Util, Audio, Circuit, ComputerAlgebra, Tests).
       - name: Build portable projects
         run: dotnet build LiveSPICE.Core.sln -c Release
-      # Same assertion as the Windows job: macOS reproduces the Windows-generated
-      # baselines to ~1e-12 (scale-normalized) at this configuration.
+      # Same unconditional assertion as the Windows job.
       - name: Run circuit tests
         working-directory: Tests
-        run: dotnet run -c Release --framework net8.0 --no-build test "Circuits/*.schx" --check --sampleRate 44100
+        run: dotnet run -c Release --framework net8.0 --no-build test "Circuits/*.schx"
       - name: Run examples
         working-directory: Tests
-        run: dotnet run -c Release --framework net8.0 --no-build test "Examples/*.schx" --check --sampleRate 44100
+        run: dotnet run -c Release --framework net8.0 --no-build test "Examples/*.schx"
       # The live audio path needs a device, which CI runners don't have. The offline render path
       # exercises schematic load, solve, codegen and the buffer loop without one.
       - name: List audio devices

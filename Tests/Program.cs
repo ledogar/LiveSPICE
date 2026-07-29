@@ -17,10 +17,9 @@ namespace Tests
             var rootCommand = new RootCommand().WithCommand("test", "Run tests", c => c
                                                     .WithArgument<string>("pattern", "Glob pattern for files to test")
                                                     .WithOption<bool>(new[] { "--plot" }, "Plot results")
-                                                    .WithOption<bool>(new[] { "--stats" }, "Write statistics")
-                                                    .WithOption<bool>(new[] { "--check" }, "Check results against saved statistics (use --sampleRate 44100, the rate the baselines were generated at)")
+                                                    .WithOption<bool>(new[] { "--updateGolden" }, "Overwrite the saved statistics instead of checking against them")
                                                     .WithOption(new[] { "--samples" }, () => 4800, "Samples")
-                                                    .WithHandler(CommandHandler.Create<string, bool, bool, bool, int, int, int, int>(Test)))
+                                                    .WithHandler(CommandHandler.Create<string, bool, bool, int, int, int, int>(Test)))
                                                .WithCommand("benchmark", "Run benchmarks", c => c
                                                     .WithArgument<string>("pattern", "Glob pattern for files to benchmark")
                                                     .WithHandler(CommandHandler.Create<string, int, int, int>(Benchmark)))
@@ -34,7 +33,7 @@ namespace Tests
 
         private static int checkFailures = 0;
 
-        public static void Test(string pattern, bool plot, bool stats, bool check, int sampleRate, int samples, int oversample, int iterations)
+        public static void Test(string pattern, bool plot, bool updateGolden, int sampleRate, int samples, int oversample, int iterations)
         {
             var log = new ConsoleLog() { Verbosity = MessageType.Info };
             var tester = new Test();
@@ -42,10 +41,9 @@ namespace Tests
             foreach (var circuit in GetCircuits(pattern, log))
             {
                 var outputs = tester.Run(circuit, t => Harmonics(t, 0.5, 82, 2), sampleRate, samples, oversample, iterations);
-                if (check)
-                {
-                    checkFailures += tester.CheckStatistics(circuit.Name, outputs, log);
-                }
+                // Checking is unconditional - skip the first half as warmup so the startup
+                // transient does not dominate the statistics.
+                checkFailures += tester.CheckStatistics(circuit.Name, outputs, samples / 2, updateGolden, log);
 #if PLOTTING
                 if (plot)
                 {
@@ -57,10 +55,6 @@ namespace Tests
                     log.WriteLine(MessageType.Warning, "--plot is not supported on this platform (requires System.Drawing/WinForms); ignoring.");
                 }
 #endif
-                if (stats)
-                {
-                    tester.WriteStatistics(circuit.Name, outputs);
-                }
             }
         }
 
