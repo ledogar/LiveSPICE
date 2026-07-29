@@ -134,6 +134,16 @@ namespace Circuit
             foreach (Expression i in Solution.Solutions.OfType<NewtonIteration>().SelectMany(i => i.Unknowns))
                 AddGlobal(i.Evaluate(t_t1));
 
+            Reset();
+
+            InvalidateProcess();
+        }
+
+        /// <summary>
+        /// Reset the simulation state to the solution's initial conditions and t = 0.
+        /// </summary>
+        public void Reset()
+        {
             // Set the global values to the initial conditions of the solution.
             foreach (KeyValuePair<Expression, GlobalExpr<double>> i in globals)
             {
@@ -142,8 +152,35 @@ namespace Circuit
                 Expression init = i_t0.Evaluate(Solution.InitialConditions);
                 i.Value.Value = init is Constant ? (double)init : 0.0;
             }
+            n = 0;
+        }
 
-            InvalidateProcess();
+        /// <summary>
+        /// Copy the simulation state (previous sample values and the sample clock) from another
+        /// simulation. This allows a replacement simulation to be built and compiled off the
+        /// audio thread when the solution changes (e.g. a pot moved), then swapped in without
+        /// resetting the circuit: unknowns present in both keep their values, unknowns new to
+        /// this solution keep their initial conditions.
+        ///
+        /// State is keyed by expressions of the form x[t - h], with the time step h baked in as a
+        /// literal, so nothing can transfer between solutions whose time steps differ. In that
+        /// case this leaves the simulation at its initial conditions and returns false rather than
+        /// carrying over a sample clock that would no longer correspond to the same instant in
+        /// time - the caller can then treat the swap as a fresh start.
+        /// </summary>
+        /// <returns>True if the state was transferred; false if the time steps are incompatible.</returns>
+        public bool CopyStateFrom(Simulation Other)
+        {
+            if (!Solution.TimeStep.Equals(Other.Solution.TimeStep))
+                return false;
+
+            foreach (KeyValuePair<Expression, GlobalExpr<double>> i in globals)
+            {
+                if (Other.globals.TryGetValue(i.Key, out GlobalExpr<double> state))
+                    i.Value.Value = state.Value;
+            }
+            n = Other.n;
+            return true;
         }
 
         /// <summary>

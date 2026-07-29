@@ -34,9 +34,12 @@ namespace Circuit
             if (iterations <= 0)
                 throw new ArgumentOutOfRangeException(nameof(iterations));
 
-            Expression inputExpression = circuit.Components.OfType<Input>().Select(i => i.In).SingleOrDefault();
-            if (inputExpression == null)
+            Input[] inputs = circuit.Components.OfType<Input>().ToArray();
+            if (inputs.Length == 0)
                 throw new NotSupportedException("Circuit has no inputs.");
+            if (inputs.Length > 1)
+                throw new NotSupportedException("Circuit has " + inputs.Length + " inputs; only one is supported.");
+            Expression inputExpression = inputs[0].In;
 
             Expression outputExpression = 0;
             foreach (Speaker speaker in circuit.Components.OfType<Speaker>())

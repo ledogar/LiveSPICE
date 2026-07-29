@@ -2,7 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using Util;
+using System.Threading.Tasks;
+using LiveSPICE.PluginCore;
 
 namespace LiveSPICE.CLI
 {
@@ -132,9 +133,10 @@ namespace LiveSPICE.CLI
             string inputFile = a.Required("input");
             string outputFile = a.Required("output");
 
-            ConsoleLog log = new ConsoleLog() { Verbosity = MessageType.Info };
-            SimulationHost host = NewHost(a, log);
-            host.Load(schematic);
+            SimulationProcessor processor = NewProcessor(a);
+            double inputGain = a.Double("input-gain", 1);
+            double outputGain = a.Double("output-gain", 1);
+            processor.LoadSchematic(schematic);
 
             Wav wav = Wav.Read(inputFile);
             double[] input = wav.Channels[0];
@@ -142,7 +144,8 @@ namespace LiveSPICE.CLI
 
             Console.WriteLine("Building simulation at {0} Hz...", wav.SampleRate);
             DateTime begin = DateTime.Now;
-            host.BuildNow(wav.SampleRate);
+            processor.SampleRate = wav.SampleRate;
+            processor.EnsureSimulationReady();
             Console.WriteLine("Built in {0:F2} s.", (DateTime.Now - begin).TotalSeconds);
 
             // Chunked, both to mirror the live path and to prove buffer boundaries don't matter.
@@ -150,11 +153,15 @@ namespace LiveSPICE.CLI
             begin = DateTime.Now;
             double[] inBlock = new double[Block];
             double[] outBlock = new double[Block];
+            double[][] inChannels = { inBlock };
+            double[][] outChannels = { outBlock };
             for (int n = 0; n < input.Length; n += Block)
             {
                 int count = Math.Min(Block, input.Length - n);
                 Array.Copy(input, n, inBlock, 0, count);
-                host.Process(count, inBlock, outBlock, wav.SampleRate);
+                ApplyGain(inBlock, count, inputGain);
+                processor.RunSimulation(inChannels, outChannels, count);
+                ApplyGain(outBlock, count, outputGain);
                 Array.Copy(outBlock, 0, output, n, count);
             }
             double elapsed = (DateTime.Now - begin).TotalSeconds;
@@ -178,9 +185,10 @@ namespace LiveSPICE.CLI
             string deviceName = a.String("device", null);
             double seconds = a.Double("seconds", 0);
 
-            ConsoleLog log = new ConsoleLog() { Verbosity = MessageType.Info };
-            SimulationHost host = NewHost(a, log);
-            host.Load(schematic);
+            SimulationProcessor processor = NewProcessor(a);
+            double inputGain = a.Double("input-gain", 1);
+            double outputGain = a.Double("output-gain", 1);
+            processor.LoadSchematic(schematic);
 
             Audio.Device device = FindDevice(deviceName);
             Audio.Channel[] inputs = SelectChannels(device.InputChannels, a.String("inputs", null), 1);
@@ -192,8 +200,10 @@ namespace LiveSPICE.CLI
             Console.WriteLine("Outputs: {0}", outputs.Length > 0 ? string.Join(", ", outputs.Select(i => i.Name)) : "(none)");
 
             double[] silence = null;
-            double builtRate = 0;
+            double[][] inChannels = new double[1][];
+            double[][] outChannels = new double[1][];
             long callbacks = 0;
+            long errors = 0;
 
             Audio.Stream stream = null;
             Audio.Stream.SampleHandler handler = (Count, In, Out, Rate) =>
@@ -202,11 +212,11 @@ namespace LiveSPICE.CLI
                 if (Out.Length == 0)
                     return;
 
-                if (builtRate != Rate)
-                {
-                    builtRate = Rate;
-                    host.BuildAsync(Rate);
-                }
+                // The setter is a no-op when the rate is unchanged; a change flags a rebuild that
+                // RunSimulation kicks off on a background task. Until the simulation is ready,
+                // RunSimulation passes the (dry) input through.
+                if (processor.SampleRate != Rate)
+                    processor.SampleRate = Rate;
 
                 double[] inBuffer;
                 if (In.Length > 0)
@@ -220,7 +230,21 @@ namespace LiveSPICE.CLI
                     inBuffer = silence;
                 }
 
-                host.Process(Count, inBuffer, Out[0].Samples, Rate);
+                ApplyGain(inBuffer, Count, inputGain);
+                inChannels[0] = inBuffer;
+                outChannels[0] = Out[0].Samples;
+                try
+                {
+                    processor.RunSimulation(inChannels, outChannels, Count);
+                }
+                catch (Exception)
+                {
+                    // A background solve failed; its exception surfaces here. Keep the stream
+                    // alive and silent - the count is reported at shutdown.
+                    Array.Clear(Out[0].Samples, 0, Count);
+                    errors++;
+                }
+                ApplyGain(Out[0].Samples, Count, outputGain);
 
                 // Same signal to every selected output channel.
                 for (int i = 1; i < Out.Length; ++i)
@@ -228,20 +252,34 @@ namespace LiveSPICE.CLI
             };
 
             stream = device.Open(handler, inputs, outputs);
-            Console.WriteLine("Playing '{0}' at {1} Hz. Press Ctrl-C to stop.", host.Name, stream.SampleRate);
+            Console.WriteLine("Playing '{0}' at {1} Hz. Press Ctrl-C to stop.", processor.SchematicName, stream.SampleRate);
             if (inputs.Length > 0)
                 Console.WriteLine("(If input is silent, grant microphone access to your terminal in " +
                                   "System Settings > Privacy & Security > Microphone.)");
 
             ManualResetEventSlim done = new ManualResetEventSlim(false);
             Console.CancelKeyPress += (s, e) => { e.Cancel = true; done.Set(); };
+
+            // Report readiness without touching the console from the audio thread.
+            Task.Run(async () =>
+            {
+                while (!done.IsSet && !processor.SimulationReady)
+                    await Task.Delay(100);
+                if (processor.SimulationReady)
+                    Console.WriteLine("Simulation ready ({0} Hz, oversample {1}, iterations {2}).",
+                        processor.SampleRate, processor.Oversample, processor.Iterations);
+            });
+
             if (seconds > 0)
                 done.Wait(TimeSpan.FromSeconds(seconds));
             else
                 done.Wait();
+            done.Set();
 
             stream.Stop();
-            Console.WriteLine("Stopped after {0} callbacks, {1} rebuild(s).", callbacks, host.Rebuilds);
+            Console.WriteLine("Stopped after {0} callbacks.", callbacks);
+            if (errors > 0)
+                Console.WriteLine("{0} callback(s) failed; last build error above.", errors);
             return 0;
         }
 
@@ -346,15 +384,21 @@ namespace LiveSPICE.CLI
 
         // --------------------------------------------------------------- utils
 
-        static SimulationHost NewHost(Args a, ILog log)
+        static SimulationProcessor NewProcessor(Args a)
         {
-            return new SimulationHost(log)
+            return new SimulationProcessor()
             {
                 Oversample = (int)a.Double("oversample", 8),
                 Iterations = (int)a.Double("iterations", 8),
-                InputGain = a.Double("input-gain", 1),
-                OutputGain = a.Double("output-gain", 1),
             };
+        }
+
+        static void ApplyGain(double[] samples, int count, double gain)
+        {
+            if (gain == 1)
+                return;
+            for (int i = 0; i < count; ++i)
+                samples[i] *= gain;
         }
 
         static Audio.Device FindDevice(string Name)
