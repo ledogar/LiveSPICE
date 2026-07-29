@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0-windows</TargetFrameworks>
+    <TargetFrameworks>net6.0-windows;net8.0</TargetFrameworks>
+    <!-- The WindowsDesktop targeting pack can't be resolved off Windows, so don't even offer that TFM there. -->
+    <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">net8.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <AssemblyName>CircuitTests</AssemblyName>
     <Product>CircuitTests</Product>
@@ -9,8 +11,13 @@
     <FileVersion>1.0.0.0</FileVersion>
     <LangVersion>8</LangVersion>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Plotting uses System.Drawing + WinForms, which are Windows-only on .NET 6+ by design. -->
+    <UseWindowsForms Condition="$(TargetFramework.EndsWith('-windows'))">true</UseWindowsForms>
+    <DefineConstants Condition="$(TargetFramework.EndsWith('-windows'))">$(DefineConstants);PLOTTING</DefineConstants>
   </PropertyGroup>
+  <ItemGroup Condition="!$(TargetFramework.EndsWith('-windows'))">
+    <Compile Remove="Plotting/**" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Circuit\Circuit.csproj" />
     <ProjectReference Include="..\ComputerAlgebra\ComputerAlgebra\ComputerAlgebra.csproj" />

@@ -1,8 +1,11 @@
 ﻿using Circuit;
 using ComputerAlgebra;
+#if PLOTTING
 using Plotting;
+#endif
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -155,6 +158,7 @@ namespace Tests
             return new double[] { analyzeTime, solveTime, rate };
         }
 
+#if PLOTTING
         public void PlotAll(string Title, Dictionary<Expression, List<double>> Outputs)
         {
             Plot p = new Plot()
@@ -173,26 +177,110 @@ namespace Tests
             { Name = i.Key.ToString() }));
 
             System.IO.Directory.CreateDirectory("Plots");
-            p.Save("Plots\\" + Title + ".bmp");
+            p.Save(Path.Combine("Plots", Title + ".bmp"));
         }
-        public void WriteStatistics(string Title, Dictionary<Expression, List<double>> Outputs)
+#endif
+        private static Dictionary<string, double[]> ComputeStatistics(Dictionary<Expression, List<double>> Outputs)
         {
-            string cols = "{0}, {1}, {2}, {3}, {4}";
-
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine(string.Format(cols, "var", "mean", "min", "max", "rms"));
+            var stats = new Dictionary<string, double[]>();
             foreach (var i in Outputs)
             {
                 double mean = i.Value.Sum() / i.Value.Count;
                 double min = i.Value.Min();
                 double max = i.Value.Max();
                 double rms = Math.Sqrt(i.Value.Select(v => v * v).Sum()) / i.Value.Count;
-                sb.AppendLine(string.Format(cols, i.Key, mean, min, max, rms));
+                stats[i.Key.ToString()] = new[] { mean, min, max, rms };
             }
+            return stats;
+        }
 
-            string path = "Stats\\" + Title + ".csv";
+        public void WriteStatistics(string Title, Dictionary<Expression, List<double>> Outputs)
+        {
+            string cols = "{0}, {1}, {2}, {3}, {4}";
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, cols, "var", "mean", "min", "max", "rms"));
+            foreach (var i in ComputeStatistics(Outputs))
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, cols, i.Key, i.Value[0], i.Value[1], i.Value[2], i.Value[3]));
+
+            string path = Path.Combine("Stats", Title + ".csv");
             System.IO.Directory.CreateDirectory("Stats");
             File.WriteAllText(path, sb.ToString());
+        }
+
+        // Circuits whose solutions deterministically amplify platform floating-point
+        // differences (hard clipping recirculated through feedback), checked with a
+        // loose tolerance. Their results are run-to-run deterministic on any one
+        // platform, but the trajectory differs measurably across platforms.
+        private static readonly Dictionary<string, double> looseTolerance = new Dictionary<string, double>
+        {
+            { "Pro Co Rat", 1e-1 },
+        };
+
+        /// <summary>
+        /// Compare simulation statistics against the saved baseline in Stats/.
+        /// The committed baselines were generated at --sampleRate 44100 (defaults otherwise);
+        /// checks only make sense at the configuration that produced the baseline.
+        /// Deviations are normalized by each variable's signal scale, max(|min|, |max|),
+        /// because the mean of an AC signal is near zero and a plain relative error there
+        /// is meaningless.
+        /// </summary>
+        /// <returns>0 if the circuit matches its baseline, 1 otherwise.</returns>
+        public int CheckStatistics(string Title, Dictionary<Expression, List<double>> Outputs, ILog Log)
+        {
+            string path = Path.Combine("Stats", Title + ".csv");
+            if (!File.Exists(path))
+            {
+                Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: no baseline at '{1}'", Title, path);
+                return 1;
+            }
+
+            var computed = ComputeStatistics(Outputs);
+            var baseline = new Dictionary<string, double[]>();
+            foreach (string line in File.ReadAllLines(path).Skip(1))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                string[] fields = line.Split(',');
+                baseline[fields[0].Trim()] = fields.Skip(1).Take(4)
+                    .Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
+            }
+
+            double tol = looseTolerance.TryGetValue(Title, out double loose) ? loose : 1e-6;
+            string[] statNames = { "mean", "min", "max", "rms" };
+            int failures = 0;
+            double worst = 0;
+            string worstAt = "";
+            foreach (var v in baseline)
+            {
+                if (!computed.TryGetValue(v.Key, out double[]? c))
+                {
+                    Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: baseline variable {1} not produced", Title, v.Key);
+                    failures++;
+                    continue;
+                }
+                double scale = Math.Max(Math.Max(Math.Abs(v.Value[1]), Math.Abs(v.Value[2])), 1e-12);
+                for (int i = 0; i < 4; ++i)
+                {
+                    double dev = Math.Abs(c[i] - v.Value[i]) / scale;
+                    if (dev > worst) { worst = dev; worstAt = v.Key + "." + statNames[i]; }
+                    // NaN deviation must fail, hence the negated comparison.
+                    if (!(dev <= tol))
+                    {
+                        Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: {1}.{2} baseline={3} computed={4} deviation={5:G3}",
+                            Title, v.Key, statNames[i], v.Value[i], c[i], dev);
+                        failures++;
+                    }
+                }
+            }
+            foreach (string k in computed.Keys.Where(k => !baseline.ContainsKey(k)))
+            {
+                Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: variable {1} missing from baseline", Title, k);
+                failures++;
+            }
+
+            if (failures == 0)
+                Log.WriteLine(MessageType.Info, "CHECK OK {0} (max deviation {1:G3} at {2})", Title, worst, worstAt);
+            return failures > 0 ? 1 : 0;
         }
     }
 }

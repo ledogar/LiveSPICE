@@ -1,6 +1,7 @@
 ﻿using ComputerAlgebra;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
@@ -346,13 +347,15 @@ namespace Circuit
             Log.WriteLine(MessageType.Verbose, "  (" + Wires.Count() + " wires)");
         }
 
-        // The .NET wrapper for this doesn't support allowing overwriting until .NET 8 :(
+#if !NET8_0_OR_GREATER
+        // File.Move can't overwrite when targeting netstandard2.0, so fall back to the Win32 call there.
         [return: MarshalAs(UnmanagedType.Bool)]
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         static extern bool MoveFileEx(string existingFileName, string newFileName, int flags);
 
         static int MOVEFILE_REPLACE_EXISTING = 1;
         static int MOVEFILE_COPY_ALLOWED = 2;
+#endif
 
         public void Save(string FileName)
         {
@@ -362,6 +365,10 @@ namespace Circuit
             // VST plugins are watching for changes.
             string temp = FileName + ".temp";
             doc.Save(temp);
+#if NET8_0_OR_GREATER
+            // Overwriting File.Move is atomic where the platform supports it, and is portable.
+            File.Move(temp, FileName, overwrite: true);
+#else
             if (!MoveFileEx(temp, FileName, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING))
             {
                 // If the MoveFileEx call failed, just save it the regular way. This should never
@@ -371,6 +378,7 @@ namespace Circuit
                 // be written for some reason).
                 doc.Save(FileName);
             }
+#endif
             Log.WriteLine(MessageType.Info, "Schematic saved to '" + FileName + "'");
             LogComponents();
         }
