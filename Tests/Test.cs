@@ -180,107 +180,68 @@ namespace Tests
             p.Save(Path.Combine("Plots", Title + ".bmp"));
         }
 #endif
-        private static Dictionary<string, double[]> ComputeStatistics(Dictionary<Expression, List<double>> Outputs)
+        /// <summary>
+        /// Statistics over the steady-state portion of the run. Warmup samples are skipped so the
+        /// startup transient - which is large, and highly sensitive to exactly where the buffer
+        /// boundaries fell - does not dominate the mean.
+        /// </summary>
+        private static Dictionary<string, double[]> ComputeStatistics(Dictionary<Expression, List<double>> Outputs, int Warmup)
         {
             var stats = new Dictionary<string, double[]>();
             foreach (var i in Outputs)
             {
-                double mean = i.Value.Sum() / i.Value.Count;
-                double min = i.Value.Min();
-                double max = i.Value.Max();
-                double rms = Math.Sqrt(i.Value.Select(v => v * v).Sum()) / i.Value.Count;
-                stats[i.Key.ToString()] = new[] { mean, min, max, rms };
+                double[] steadyState = i.Value.Skip(Warmup).ToArray();
+                stats[i.Key.ToString()] = new[] { steadyState.Sum() / steadyState.Length, steadyState.Min(), steadyState.Max() };
             }
             return stats;
         }
 
-        public void WriteStatistics(string Title, Dictionary<Expression, List<double>> Outputs)
+        // G5 is deliberate: rounding to five significant figures absorbs the last-digit
+        // differences between platforms and CPU architectures, which lets the baselines be
+        // compared as text instead of needing per-variable tolerances.
+        private const string StatsColumns = "{0}, {1:G5}, {2:G5}, {3:G5}";
+
+        private static string StatsToString(Dictionary<Expression, List<double>> Outputs, int Warmup)
         {
-            string cols = "{0}, {1}, {2}, {3}, {4}";
-
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, cols, "var", "mean", "min", "max", "rms"));
-            foreach (var i in ComputeStatistics(Outputs))
-                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, cols, i.Key, i.Value[0], i.Value[1], i.Value[2], i.Value[3]));
-
-            string path = Path.Combine("Stats", Title + ".csv");
-            System.IO.Directory.CreateDirectory("Stats");
-            File.WriteAllText(path, sb.ToString());
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, StatsColumns, "var", "mean", "min", "max"));
+            foreach (var i in ComputeStatistics(Outputs, Warmup))
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, StatsColumns, i.Key, i.Value[0], i.Value[1], i.Value[2]));
+            return sb.ToString();
         }
 
-        // Circuits whose solutions deterministically amplify platform floating-point
-        // differences (hard clipping recirculated through feedback), checked with a
-        // loose tolerance. Their results are run-to-run deterministic on any one
-        // platform, but the trajectory differs measurably across platforms.
-        private static readonly Dictionary<string, double> looseTolerance = new Dictionary<string, double>
-        {
-            { "Pro Co Rat", 1e-1 },
-        };
-
         /// <summary>
-        /// Compare simulation statistics against the saved baseline in Stats/.
-        /// The committed baselines were generated at --sampleRate 44100 (defaults otherwise);
-        /// checks only make sense at the configuration that produced the baseline.
-        /// Deviations are normalized by each variable's signal scale, max(|min|, |max|),
-        /// because the mean of an AC signal is near zero and a plain relative error there
-        /// is meaningless.
+        /// Compare simulation statistics against the golden file in Stats/, or regenerate it.
+        /// Checking is unconditional: a test run that does not assert is not a test.
         /// </summary>
-        /// <returns>0 if the circuit matches its baseline, 1 otherwise.</returns>
-        public int CheckStatistics(string Title, Dictionary<Expression, List<double>> Outputs, ILog Log)
+        /// <returns>0 if the circuit matches its golden file, 1 otherwise.</returns>
+        public int CheckStatistics(string Title, Dictionary<Expression, List<double>> Outputs, int Warmup, bool Update, ILog Log)
         {
+            string stats = StatsToString(Outputs, Warmup);
             string path = Path.Combine("Stats", Title + ".csv");
+
+            if (Update)
+            {
+                System.IO.Directory.CreateDirectory("Stats");
+                File.WriteAllText(path, stats);
+                return 0;
+            }
+
             if (!File.Exists(path))
             {
-                Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: no baseline at '{1}'", Title, path);
+                Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: no golden file at '{1}'. Run with --updateGolden to create one.", Title, path);
                 return 1;
             }
 
-            var computed = ComputeStatistics(Outputs);
-            var baseline = new Dictionary<string, double[]>();
-            foreach (string line in File.ReadAllLines(path).Skip(1))
+            string golden = File.ReadAllText(path);
+            if (golden.Replace("\r\n", "\n") == stats.Replace("\r\n", "\n"))
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                string[] fields = line.Split(',');
-                baseline[fields[0].Trim()] = fields.Skip(1).Take(4)
-                    .Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
+                Log.WriteLine(MessageType.Info, "CHECK OK {0}", Title);
+                return 0;
             }
 
-            double tol = looseTolerance.TryGetValue(Title, out double loose) ? loose : 1e-6;
-            string[] statNames = { "mean", "min", "max", "rms" };
-            int failures = 0;
-            double worst = 0;
-            string worstAt = "";
-            foreach (var v in baseline)
-            {
-                if (!computed.TryGetValue(v.Key, out double[]? c))
-                {
-                    Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: baseline variable {1} not produced", Title, v.Key);
-                    failures++;
-                    continue;
-                }
-                double scale = Math.Max(Math.Max(Math.Abs(v.Value[1]), Math.Abs(v.Value[2])), 1e-12);
-                for (int i = 0; i < 4; ++i)
-                {
-                    double dev = Math.Abs(c[i] - v.Value[i]) / scale;
-                    if (dev > worst) { worst = dev; worstAt = v.Key + "." + statNames[i]; }
-                    // NaN deviation must fail, hence the negated comparison.
-                    if (!(dev <= tol))
-                    {
-                        Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: {1}.{2} baseline={3} computed={4} deviation={5:G3}",
-                            Title, v.Key, statNames[i], v.Value[i], c[i], dev);
-                        failures++;
-                    }
-                }
-            }
-            foreach (string k in computed.Keys.Where(k => !baseline.ContainsKey(k)))
-            {
-                Log.WriteLine(MessageType.Error, "CHECK FAIL {0}: variable {1} missing from baseline", Title, k);
-                failures++;
-            }
-
-            if (failures == 0)
-                Log.WriteLine(MessageType.Info, "CHECK OK {0} (max deviation {1:G3} at {2})", Title, worst, worstAt);
-            return failures > 0 ? 1 : 0;
+            Log.WriteLine(MessageType.Error, "CHECK FAIL {0}:\n  got:\n{1}\n  expected:\n{2}", Title, stats, golden);
+            return 1;
         }
     }
 }
