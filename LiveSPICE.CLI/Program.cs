@@ -57,7 +57,9 @@ namespace LiveSPICE.CLI
   livespice play --schematic <file.schx> [--device <name>] [--inputs 0] [--outputs 0,1]
                  [--oversample 8] [--iterations 8] [--input-gain 1] [--output-gain 1]
                  [--seconds <n>]
-      Play live through a circuit. Runs until Ctrl-C unless --seconds is given.");
+      Play live through a circuit. Runs until Ctrl-C unless --seconds is given.
+      --outputs defaults to the first two channels. On an Aggregate Device those may
+      be the loopback rather than the speakers - check 'livespice list'.");
         }
 
         // ---------------------------------------------------------------- list
@@ -182,7 +184,8 @@ namespace LiveSPICE.CLI
 
             Audio.Device device = FindDevice(deviceName);
             Audio.Channel[] inputs = SelectChannels(device.InputChannels, a.String("inputs", null), 1);
-            Audio.Channel[] outputs = SelectChannels(device.OutputChannels, a.String("outputs", null), int.MaxValue);
+            Audio.Channel[] outputs = SelectChannels(device.OutputChannels, a.String("outputs", null), DefaultOutputChannels);
+            WarnUnselectedOutputs(device, outputs);
 
             Console.WriteLine("Device: {0}", device.Name);
             Console.WriteLine("Inputs: {0}", inputs.Length > 0 ? string.Join(", ", inputs.Select(i => i.Name)) : "(none)");
@@ -259,7 +262,8 @@ namespace LiveSPICE.CLI
 
             Audio.Device device = FindDevice(deviceName);
             Audio.Channel[] inputs = SelectChannels(device.InputChannels, a.String("inputs", null), 1);
-            Audio.Channel[] outputs = SelectChannels(device.OutputChannels, a.String("outputs", null), int.MaxValue);
+            Audio.Channel[] outputs = SelectChannels(device.OutputChannels, a.String("outputs", null), DefaultOutputChannels);
+            WarnUnselectedOutputs(device, outputs);
             Console.WriteLine("Device: {0} ({1} in, {2} out)", device.Name, inputs.Length, outputs.Length);
 
             List<double> captured = new List<double>();
@@ -370,6 +374,26 @@ namespace LiveSPICE.CLI
             if (device == null)
                 throw new NotSupportedException("No device matching '" + Name + "'. Try 'livespice list'.");
             return device;
+        }
+
+        /// <summary>
+        /// Default to a stereo pair rather than every output. Writing to every channel of a device
+        /// that also provides input - an Aggregate Device built around a loopback like BlackHole -
+        /// feeds the output straight back into the input.
+        /// </summary>
+        const int DefaultOutputChannels = 2;
+
+        static void WarnUnselectedOutputs(Audio.Device Device, Audio.Channel[] Selected)
+        {
+            if (Device.OutputChannels.Length <= Selected.Length)
+                return;
+            Console.WriteLine("Note: this device has {0} output channels and {1} were selected. " +
+                              "On an Aggregate Device the first channels are not necessarily the ones " +
+                              "you hear - use --outputs to pick. Available:",
+                Device.OutputChannels.Length, Selected.Length);
+            for (int i = 0; i < Device.OutputChannels.Length; ++i)
+                Console.WriteLine("    [{0}] {1}{2}", i, Device.OutputChannels[i].Name,
+                    Selected.Contains(Device.OutputChannels[i]) ? "  (selected)" : "");
         }
 
         static Audio.Channel[] SelectChannels(Audio.Channel[] Available, string Spec, int DefaultCount)
