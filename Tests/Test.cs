@@ -201,12 +201,27 @@ namespace Tests
         // compared as text instead of needing per-variable tolerances.
         private const string StatsColumns = "{0}, {1:G5}, {2:G5}, {3:G5}";
 
+        /// <summary>
+        /// Snap statistics that are negligible against the variable's own range to zero. The mean
+        /// of a symmetric signal is a cancellation residual near zero, and printing five
+        /// significant figures of it just publishes floating-point noise: a floating node whose
+        /// true mean is zero otherwise differs between platforms in every digit.
+        /// </summary>
+        private static double Denoise(double Value, double Scale)
+        {
+            return Math.Abs(Value) < Scale * 1e-6 ? 0.0 : Value;
+        }
+
         private static string StatsToString(Dictionary<Expression, List<double>> Outputs, int Warmup)
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture, StatsColumns, "var", "mean", "min", "max"));
             foreach (var i in ComputeStatistics(Outputs, Warmup))
-                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, StatsColumns, i.Key, i.Value[0], i.Value[1], i.Value[2]));
+            {
+                double scale = Math.Max(Math.Abs(i.Value[1]), Math.Abs(i.Value[2]));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, StatsColumns,
+                    i.Key, Denoise(i.Value[0], scale), Denoise(i.Value[1], scale), Denoise(i.Value[2], scale)));
+            }
             return sb.ToString();
         }
 
