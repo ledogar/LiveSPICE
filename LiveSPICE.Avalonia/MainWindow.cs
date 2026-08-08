@@ -37,6 +37,8 @@ public sealed class MainWindow : Window
 
     private readonly TabControl documents = new TabControl();
     private readonly ListBox componentList = new ListBox();
+    private readonly TextBox componentFilter = new TextBox { Watermark = "Filter components" };
+    private List<ComponentListItem> allComponents = new List<ComponentListItem>();
     private readonly PropertyInspector propertyInspector = new PropertyInspector();
     private readonly TextBlock status = new TextBlock { Text = "Ready", VerticalAlignment = VerticalAlignment.Center };
     private readonly AppSettings settings = AppSettings.Load();
@@ -83,9 +85,17 @@ public sealed class MainWindow : Window
         componentList.Margin = new global::Avalonia.Thickness(6);
         componentList.DoubleTapped += (_, _) => ActivateSelectedComponent();
         componentList.SelectionChanged += (_, _) => ActivateSelectedComponent();
+        componentFilter.Margin = new global::Avalonia.Thickness(6, 0, 6, 4);
+        componentFilter.TextChanged += (_, _) => ApplyComponentFilter();
         PopulateComponents();
 
-        Border componentsPanel = Panel("Components", componentList);
+        // The library adds ~90 parts to what was a short list, so it needs a filter to stay usable.
+        DockPanel componentsContent = new DockPanel();
+        DockPanel.SetDock(componentFilter, Dock.Top);
+        componentsContent.Children.Add(componentFilter);
+        componentsContent.Children.Add(componentList);
+
+        Border componentsPanel = Panel("Components", componentsContent);
         Grid.SetColumn(componentsPanel, 0);
         content.Children.Add(componentsPanel);
 
@@ -622,7 +632,24 @@ public sealed class MainWindow : Window
                 }
             }
 
-            componentList.ItemsSource = items.OrderBy(i => i.Name).ToList();
+            // Library parts (2N3904, 1N4148, 12AX7, ...) come after the generic types, so the
+            // built-in components stay at the top where they were rather than being buried among
+            // 80-odd part numbers.
+            allComponents = items.OrderBy(i => i.Name)
+                .Concat(ComponentLibrary.Load().Select(i => new ComponentListItem(i)).OrderBy(i => i.Category).ThenBy(i => i.Name))
+                .ToList();
+            ApplyComponentFilter();
+        }
+
+        private void ApplyComponentFilter()
+        {
+            string filter = componentFilter.Text?.Trim() ?? string.Empty;
+            componentList.ItemsSource = filter.Length == 0
+                ? allComponents
+                : allComponents.Where(i =>
+                    i.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    i.Category.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    i.Description.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
         }
 
         private void ActivateSelectedComponent()
@@ -637,7 +664,7 @@ public sealed class MainWindow : Window
                 return;
             }
 
-            ActiveCanvas.PendingComponent = (CircuitComponent)Activator.CreateInstance(item.ComponentType)!;
+            ActiveCanvas.PendingComponent = item.Create();
             status.Text = $"Place {item.Name}: click schematic";
         }
 
@@ -812,22 +839,43 @@ public sealed class MainWindow : Window
 
 internal sealed class ComponentListItem
 {
+    private readonly LibraryPart? part;
+
     public ComponentListItem(Type componentType)
     {
         ComponentType = componentType;
         CircuitComponent component = (CircuitComponent)Activator.CreateInstance(componentType)!;
         Name = component.TypeName;
+        Category = string.Empty;
         Description = componentType.CustomAttribute<DescriptionAttribute>()?.Description ?? componentType.Name;
     }
 
-    public Type ComponentType { get; }
+    public ComponentListItem(LibraryPart part)
+    {
+        this.part = part;
+        Name = part.Name;
+        Category = part.Category;
+        Description = part.Description;
+    }
+
+    /// <summary>Null for library parts, which are built by deserializing their library entry.</summary>
+    public Type? ComponentType { get; }
 
     public string Name { get; }
 
+    public string Category { get; }
+
     public string Description { get; }
+
+    public CircuitComponent Create()
+    {
+        if (part != null)
+            return (CircuitComponent)part.Create();
+        return (CircuitComponent)Activator.CreateInstance(ComponentType!)!;
+    }
 
     public override string ToString()
     {
-        return Name;
+        return Category.Length > 0 ? $"{Name}  ({Category})" : Name;
     }
 }
